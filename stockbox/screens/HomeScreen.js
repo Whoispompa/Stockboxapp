@@ -268,10 +268,7 @@ export default function HomeScreen({ navigation }) {
           </TouchableOpacity>
 
           <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>¿No tienes una cuenta? </Text>
-            <TouchableOpacity onPress={() => console.log('Register')}>
-              <Text style={styles.registerLink}>Regístrate</Text>
-            </TouchableOpacity>
+
           </View>
         </View>
       </ScrollView>

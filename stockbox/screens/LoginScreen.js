@@ -8,10 +8,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Dimensions,
+  Alert 
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import axios from 'axios';
+
+const API_URL = 'http://193.203.165.112:4000';
+
+
 
 const DashboardCard = ({ title, value, icon, color }) => (
   <View style={[styles.card, { borderLeftColor: color }]}>
@@ -42,6 +47,8 @@ export default function HomeScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
+  const [isLoading, setIsLoading] = useState(false); // Agrega esta línea
+
 
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -70,12 +77,57 @@ export default function HomeScreen({ navigation }) {
     return true;
   };
 
-  const handleLogin = () => {
+
+  const handleLogin = async () => {
     const isEmailValid = validateEmail(email);
     const isPasswordValid = validatePassword(password);
     
-    if (isEmailValid && isPasswordValid) {
+    if (!isEmailValid || !isPasswordValid) return;
+  
+    function LoginScreen({ navigation, setIsLoggedIn }) {
+      const handleLogin = () => {
+        // Lógica de autenticación aquí...
+        setIsLoggedIn(true); // Redirige automáticamente a Home
+      };
+    
+      return (
+        // Tu formulario de login
+        <Button title="Iniciar sesión OK" onPress={handleLogin} />
+      );
+    }
+    
+    try {
+      const response = await axios.post(`${API_URL}/api/auth/login`, {
+        email: email.trim(),
+        password: password
+      }, {
+      });
+  
+      // Si la respuesta es exitosa (asumiendo que el backend devuelve un token)
       setIsLoggedIn(true);
+      
+      // Opcional: Guardar datos del usuario si los necesitas
+      // console.log('Respuesta del servidor:', response.data);
+      
+    } catch (error) {
+      let errorMessage = 'Error al iniciar sesión';
+      
+      if (error.response) {
+        // Error de respuesta del servidor (4xx, 5xx)
+        if (error.response.status === 401) {
+          errorMessage = 'Email o contraseña incorrectos';
+        } else {
+          errorMessage = error.response.data.message || errorMessage;
+        }
+      } else if (error.code === 'ECONNABORTED') {
+        errorMessage = 'Tiempo de espera agotado. Intente nuevamente.';
+      } else if (error.message.includes('Network Error')) {
+        errorMessage = 'Error de conexión. Verifica tu internet.';
+      }
+      
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -267,12 +319,7 @@ export default function HomeScreen({ navigation }) {
             </LinearGradient>
           </TouchableOpacity>
 
-          <View style={styles.registerContainer}>
-            <Text style={styles.registerText}>¿No tienes una cuenta? </Text>
-            <TouchableOpacity onPress={() => console.log('Register')}>
-              <Text style={styles.registerLink}>Regístrate</Text>
-            </TouchableOpacity>
-          </View>
+          
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
