@@ -137,53 +137,52 @@ export default function TransferScreen({ navigation }) {
     }
   };
 
-    const handleAuthorization = async () => {
-    if (!authCode) {
-      Alert.alert("Error", "Ingrese el ID del usuario que autoriza");
-      return;
-    }
-  
-    try {
-      // Mostrar indicador de carga
-      setTransferring(true);
-  
-      // Llamada al endpoint para completar la transferencia
-      const response = await axios.patch(
-        `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`,
-        { approvedBy: authCode } // Enviar el ID del usuario como código de autorización
-      );
-  
-      // Actualizar el estado local de las transferencias
-      setPendingTransfers((prevTransfers) =>
-        prevTransfers.map((transfer) =>
-          transfer.id === selectedTransfer.id
-            ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
-            : transfer
-        )
-      );
-  
-      // Restablecer el estado del modal y el código de autorización
-      setAuthCode("");
-      setShowAuthModal(false);
-      setSelectedTransfer(null);
-  
-      // Mostrar mensaje de éxito
-      Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
-    } catch (error) {
-      console.error(
-        "Error completing transfer:",
-        error.response?.data || error.message
-      );
-      Alert.alert(
-        "Error",
-        error.response?.data?.message ||
-          "Ocurrió un error inesperado al completar la transferencia"
-      );
-    } finally {
-      // Ocultar indicador de carga
-      setTransferring(false);
-    }
-  };
+        const handleAuthorization = async () => {
+      if (!selectedTransfer || !selectedTransfer.id) {
+        Alert.alert("Error", "No se ha seleccionado una transferencia para autorizar");
+        return;
+      }
+    
+      try {
+        // Mostrar indicador de carga
+        setTransferring(true);
+    
+        // Llamada al endpoint para completar la transferencia
+        const response = await axios.patch(
+          `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`
+        );
+    
+        // Actualizar el estado local de las transferencias
+        setPendingTransfers((prevTransfers) =>
+          prevTransfers.map((transfer) =>
+            transfer.id === selectedTransfer.id
+              ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
+              : transfer
+          )
+        );
+    
+        // Restablecer el estado del modal y el código de autorización
+        setAuthCode("");
+        setShowAuthModal(false);
+        setSelectedTransfer(null);
+    
+        // Mostrar mensaje de éxito
+        Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
+      } catch (error) {
+        console.error(
+          "Error completing transfer:",
+          error.response?.data || error.message
+        );
+        Alert.alert(
+          "Error",
+          error.response?.data?.message ||
+            "Ocurrió un error inesperado al completar la transferencia"
+        );
+      } finally {
+        // Ocultar indicador de carga
+        setTransferring(false);
+      }
+    };
 
   const resetForm = () => {
     setSelectedPart(null);
