@@ -16,7 +16,8 @@ import { toast } from "sonner-native";
 import axios from "axios";
 
 const API_BASE_URL = "http://193.203.165.112:4000/api";
-const TOKEN =  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzQ3MTIxMTQ5LCJleHAiOjE3NDcxMjQ3NDl9.cvUrafUQPhivmmWtAvSCTo6veKOaTaNAiIajJTmR2nI"
+const TOKEN =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzQ3MTYzNTk4LCJleHAiOjE3NDcxNjcxOTh9.ptYr6BpnaFRjbHp9fhGJEc7h4JLaQSxvUA_tF2yK9N8";
 
 // Configurar Axios con el token
 axios.defaults.baseURL = API_BASE_URL;
@@ -38,12 +39,6 @@ export default function TransferScreen({ navigation }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [transferring, setTransferring] = useState(false);
-
-  // Simular códigos de autorización válidos
-  const validAuthCodes = {
-    ADMIN123: "admin",
-    SUPER456: "supervisor",
-  };
 
   useEffect(() => {
     fetchData();
@@ -137,52 +132,55 @@ export default function TransferScreen({ navigation }) {
     }
   };
 
-        const handleAuthorization = async () => {
-      if (!selectedTransfer || !selectedTransfer.id) {
-        Alert.alert("Error", "No se ha seleccionado una transferencia para autorizar");
-        return;
-      }
-    
-      try {
-        // Mostrar indicador de carga
-        setTransferring(true);
-    
-        // Llamada al endpoint para completar la transferencia
-        const response = await axios.patch(
-          `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`
-        );
-    
-        // Actualizar el estado local de las transferencias
-        setPendingTransfers((prevTransfers) =>
-          prevTransfers.map((transfer) =>
-            transfer.id === selectedTransfer.id
-              ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
-              : transfer
-          )
-        );
-    
-        // Restablecer el estado del modal y el código de autorización
-        setAuthCode("");
-        setShowAuthModal(false);
-        setSelectedTransfer(null);
-    
-        // Mostrar mensaje de éxito
-        Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
-      } catch (error) {
-        console.error(
-          "Error completing transfer:",
-          error.response?.data || error.message
-        );
-        Alert.alert(
-          "Error",
-          error.response?.data?.message ||
-            "Ocurrió un error inesperado al completar la transferencia"
-        );
-      } finally {
-        // Ocultar indicador de carga
-        setTransferring(false);
-      }
-    };
+  const handleAuthorization = async () => {
+    if (!selectedTransfer || !selectedTransfer.id) {
+      Alert.alert(
+        "Error",
+        "No se ha seleccionado una transferencia para autorizar"
+      );
+      return;
+    }
+
+    try {
+      // Mostrar indicador de carga
+      setTransferring(true);
+
+      // Llamada al endpoint para completar la transferencia
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`
+      );
+
+      // Actualizar el estado local de las transferencias
+      setPendingTransfers((prevTransfers) =>
+        prevTransfers.map((transfer) =>
+          transfer.id === selectedTransfer.id
+            ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
+            : transfer
+        )
+      );
+
+      // Restablecer el estado del modal y el código de autorización
+      setAuthCode("");
+      setShowAuthModal(false);
+      setSelectedTransfer(null);
+
+      // Mostrar mensaje de éxito
+      Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
+    } catch (error) {
+      console.error(
+        "Error completing transfer:",
+        error.response?.data || error.message
+      );
+      Alert.alert(
+        "Error",
+        error.response?.data?.message ||
+          "Ocurrió un error inesperado al completar la transferencia"
+      );
+    } finally {
+      // Ocultar indicador de carga
+      setTransferring(false);
+    }
+  };
 
   const resetForm = () => {
     setSelectedPart(null);
@@ -252,13 +250,21 @@ export default function TransferScreen({ navigation }) {
       {/* Lista de refacciones */}
       <ScrollView style={styles.partsList}>
         {filteredParts.map((part) => (
-          <View key={part.id} style={styles.partCard}>
+          <View
+            key={`product-${part.id}-${Date.now()}`}
+            style={styles.partCard}
+          >
             <View style={styles.partInfo}>
               <Text style={styles.partCode}>{part.sku}</Text>
               <Text style={styles.partName}>{part.name}</Text>
               <View style={styles.stockContainer}>
                 {warehouses.map((warehouse) => (
-                  <View key={warehouse.id} style={styles.stockItem}>
+                  <View
+                    key={`wh-${warehouse.id}-prod-${part.id}-${Math.random()
+                      .toString(36)
+                      .substr(2, 9)}`}
+                    style={styles.stockItem}
+                  >
                     <Text style={styles.warehouseName}>{warehouse.name}:</Text>
                     <Text
                       style={[
@@ -430,7 +436,7 @@ export default function TransferScreen({ navigation }) {
                 <View style={styles.warehouseButtons}>
                   {warehouses.map((warehouse) => (
                     <TouchableOpacity
-                      key={warehouse.id}
+                      key={`source-wh-${warehouse.id}`}
                       style={[
                         styles.warehouseButton,
                         sourceWarehouse === warehouse.id &&
@@ -465,7 +471,7 @@ export default function TransferScreen({ navigation }) {
                 <View style={styles.warehouseButtons}>
                   {warehouses.map((warehouse) => (
                     <TouchableOpacity
-                      key={warehouse.id}
+                      key={`target-wh-${warehouse.id}`}
                       style={[
                         styles.warehouseButton,
                         targetWarehouse === warehouse.id &&

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react"; // Añade useEffect aquí
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -6,23 +6,18 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Platform,
   ActivityIndicator,
-  RefreshControl, // Añade este import
-   Alert, // ¡Añade esto!
+  RefreshControl,
+  Alert,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { toast } from "sonner-native";
 
-const API_BASE_URL = "http://193.203.165.112:4000/api/product";
-const PRODUCTS_ENDPOINT = `${API_BASE_URL}/all`;
+const API_BASE_URL = "http://193.203.165.112:4000/api";
+const PRODUCTS_ENDPOINT = `${API_BASE_URL}/product/all`;
+const PRODUCTS_CREATE_URL = `${API_BASE_URL}/product/create`;
 const CATEGORY_API_URL = "http://193.203.165.112:4000/api/category";
-
-const warehouses = [
-  { id: 1, name: "Almacén A" },
-  { id: 2, name: "Almacén B" },
-];
+const WAREHOUSE_API_URL = "http://193.203.165.112:4000/api/warehouse/all";
 
 const initialFormState = {
   id: null,
@@ -30,13 +25,14 @@ const initialFormState = {
   name: "",
   description: "",
   quantity: "",
-  warehouseId: "", // No hay valor por defecto
-  categoryId: "", // No hay valor por defecto
+  warehouseId: "",
+  categoryId: "",
 };
 
 export default function PartsManagementScreen({ navigation }) {
   const [parts, setParts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [warehouses, setWarehouses] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
   const [errors, setErrors] = useState({});
   const [isEditing, setIsEditing] = useState(false);
@@ -47,13 +43,10 @@ export default function PartsManagementScreen({ navigation }) {
   // Cargar datos iniciales
   const loadInitialData = async () => {
     try {
-      // Cargar categorías
-      const categoriesResponse = await fetch(CATEGORY_API_URL);
-      const categoriesData = await categoriesResponse.json();
-      setCategories(categoriesData);
-
-      // Cargar productos
-      await fetchProducts();
+      setLoading(true);
+      await fetchCategories(); // Cargar categorías primero
+      await fetchWarehouses(); // Luego cargar almacenes
+      await fetchProducts(); // Finalmente cargar productos
     } catch (error) {
       console.error("Error loading initial data:", error);
       Alert.alert("Error", "No se pudieron cargar los datos iniciales");
@@ -62,34 +55,68 @@ export default function PartsManagementScreen({ navigation }) {
     }
   };
 
+  // Obtener categorías
+  const fetchCategories = async () => {
+    try {
+      const response = await fetch(CATEGORY_API_URL);
+      if (!response.ok) throw new Error("Error al cargar categorías");
+      const data = await response.json();
+      console.log("Categorías cargadas:", data); // Depuración
+      if (!Array.isArray(data)) throw new Error("Formato de datos inválido");
+      setCategories(data);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      Alert.alert("Error", "No se pudieron cargar las categorías");
+    }
+  };
+
+  const fetchWarehouses = async () => {
+    try {
+      const response = await fetch(WAREHOUSE_API_URL, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization:
+            "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzQ3MTYxMTMzLCJleHAiOjE3NDcxNjQ3MzN9.lHqtFhEwcfgef48ZZIw08BV_atnIPsd9txcPzUIr0AU",
+        },
+      });
+
+      if (!response.ok) throw new Error("Error al cargar almacenes");
+      const data = await response.json();
+      if (!Array.isArray(data)) throw new Error("Formato de datos inválido");
+      setWarehouses(data);
+    } catch (error) {
+      console.error("Error fetching warehouses:", error);
+      Alert.alert("Error", "No se pudieron cargar los almacenes");
+    }
+  };
+
   // Obtener productos
-  const fetchProducts = async () => {
+    const fetchProducts = async () => {
     try {
       setRefreshing(true);
       const response = await fetch(PRODUCTS_ENDPOINT);
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
-
+      if (!response.ok) throw new Error("Error al cargar productos");
+  
       const data = await response.json();
-
+  
       const transformedData = data.map((item) => ({
         id: item.id,
         sku: item.sku,
         name: item.name,
         description: item.description,
-        quantity: item.stock?.quantity || 0,
+        quantity: item.quantity || 0,
         warehouseName:
-          warehouses.find((w) => w.id === item.stock?.warehouseId)?.name ||
+          warehouses.find((w) => w.id === item.warehouseId)?.name ||
           "Almacén no asignado",
-        warehouseId: item.stock?.warehouseId,
+        warehouseId: item.warehouseId,
         categoryName:
           categories.find((c) => c.id === item.categoryId)?.name ||
           "Sin categoría",
         categoryId: item.categoryId,
       }));
-
+  
+      console.log("Productos transformados:", transformedData); // Depuración
       setParts(transformedData);
     } catch (error) {
       console.error("Error fetching products:", error);
@@ -102,6 +129,28 @@ export default function PartsManagementScreen({ navigation }) {
   useEffect(() => {
     loadInitialData();
   }, []);
+
+  // Actualizar partes cuando cambian warehouses o categories
+  useEffect(() => {
+    if (warehouses.length > 0 && categories.length > 0 && parts.length > 0) {
+      const updatedParts = parts.map((item) => ({
+        ...item,
+        warehouseName:
+          warehouses.find((w) => w.id === item.warehouseId)?.name ||
+          "Almacén no asignado",
+        categoryName:
+          categories.find((c) => c.id === item.categoryId)?.name ||
+          "Sin categoría",
+      }));
+      setParts(updatedParts);
+    }
+  }, [warehouses, categories]);
+
+    useEffect(() => {
+    console.log("Categorías cargadas:", categories);
+    console.log("Almacenes cargados:", warehouses);
+    console.log("Productos cargados:", parts);
+  }, [categories, warehouses, parts]);
 
   // Validación del formulario
   const validateForm = () => {
@@ -127,18 +176,18 @@ export default function PartsManagementScreen({ navigation }) {
         name: formData.name,
         description: formData.description,
         categoryId: formData.categoryId,
-        stock: {
-          warehouseId: formData.warehouseId,
-          quantity: parseInt(formData.quantity, 10),
-        },
+        warehouseId: formData.warehouseId,
+        quantity: parseInt(formData.quantity, 10), // Asegurarse de que sea un número
       };
 
       const url = isEditing
-        ? `${API_BASE_URL}/update/${formData.id}`
-        : `${API_BASE_URL}/create`;
+        ? `${API_BASE_URL}/product/update/${formData.id}`
+        : PRODUCTS_CREATE_URL;
+
+      const method = isEditing ? "PATCH" : "POST";
 
       const response = await fetch(url, {
-        method: isEditing ? "PUT" : "POST",
+        method,
         headers: {
           "Content-Type": "application/json",
         },
@@ -158,7 +207,7 @@ export default function PartsManagementScreen({ navigation }) {
       resetForm();
     } catch (error) {
       console.error("Submission error:", error);
-      Alert.alert("Error", error.message);
+      Alert.alert("Error", error.message || "Error al guardar el producto");
     }
   };
 
@@ -180,19 +229,35 @@ export default function PartsManagementScreen({ navigation }) {
   // Eliminar producto
   const handleDelete = async (id) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
-        method: "DELETE",
-      });
+      Alert.alert(
+        "Confirmar eliminación",
+        "¿Estás seguro de que deseas eliminar este producto?",
+        [
+          {
+            text: "Cancelar",
+            style: "cancel",
+          },
+          {
+            text: "Eliminar",
+            onPress: async () => {
+              const response = await fetch(`${API_BASE_URL}/delete/${id}`, {
+                method: "DELETE",
+              });
 
-      if (!response.ok) {
-        throw new Error("Error al eliminar el producto");
-      }
+              if (!response.ok) {
+                throw new Error("Error al eliminar el producto");
+              }
 
-      Alert.alert("Éxito", "Producto eliminado correctamente");
-      await fetchProducts();
+              Alert.alert("Éxito", "Producto eliminado correctamente");
+              await fetchProducts();
+            },
+            style: "destructive",
+          },
+        ]
+      );
     } catch (error) {
       console.error("Delete error:", error);
-      Alert.alert("Error", error.message);
+      Alert.alert("Error", error.message || "Error al eliminar el producto");
     }
   };
 
@@ -328,9 +393,13 @@ export default function PartsManagementScreen({ navigation }) {
                   errors.warehouseId && styles.inputError,
                 ]}
                 onPress={() => {
+                  if (warehouses.length === 0) {
+                    Alert.alert("Error", "No hay almacenes disponibles");
+                    return;
+                  }
                   Alert.alert(
                     "Seleccionar Almacén",
-                    null, // Cambiar el segundo argumento a null o un mensaje
+                    null,
                     warehouses.map((warehouse) => ({
                       text: warehouse.name,
                       onPress: () => {
@@ -348,7 +417,8 @@ export default function PartsManagementScreen({ navigation }) {
                   ]}
                 >
                   {formData.warehouseId
-                    ? warehouses.find((w) => w.id === formData.warehouseId).name
+                    ? warehouses.find((w) => w.id === formData.warehouseId)
+                        ?.name
                     : "Seleccionar almacén"}
                 </Text>
                 <MaterialCommunityIcons
@@ -370,6 +440,10 @@ export default function PartsManagementScreen({ navigation }) {
                   errors.categoryId && styles.inputError,
                 ]}
                 onPress={() => {
+                  if (categories.length === 0) {
+                    Alert.alert("Error", "No hay categorías disponibles");
+                    return;
+                  }
                   Alert.alert(
                     "Seleccionar Categoría",
                     null,
@@ -390,7 +464,7 @@ export default function PartsManagementScreen({ navigation }) {
                   ]}
                 >
                   {formData.categoryId
-                    ? categories.find((c) => c.id === formData.categoryId).name
+                    ? categories.find((c) => c.id === formData.categoryId)?.name
                     : "Seleccionar categoría"}
                 </Text>
                 <MaterialCommunityIcons
@@ -449,10 +523,13 @@ export default function PartsManagementScreen({ navigation }) {
 
                 <View style={styles.partDetails}>
                   <Text style={styles.partDescription}>
-                    {product.description}
+                    {product.description || "Sin descripción"}
                   </Text>
                   <Text style={styles.partLocation}>
                     Almacén: {product.warehouseName}
+                  </Text>
+                  <Text style={styles.partCategory}>
+                    Categoría: {product.categoryName}
                   </Text>
                 </View>
 
@@ -488,155 +565,155 @@ export default function PartsManagementScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // ... (mantener los estilos existentes)
-  dropdown: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  dropdownSelected: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  placeholderText: {
-    color: "#94a3b8",
-  },
-  slider: {
-    width: "100%",
-    height: 40,
-  },
   container: {
     flex: 1,
     backgroundColor: "#f8fafc",
   },
   header: {
-    backgroundColor: "#ffffff",
-    padding: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 16,
+    backgroundColor: "white",
     borderBottomWidth: 1,
     borderBottomColor: "#e2e8f0",
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 10,
+    marginRight: 16,
   },
   backButtonText: {
     marginLeft: 8,
-    fontSize: 16,
     color: "#64748b",
+    fontSize: 16,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "bold",
     color: "#1e293b",
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: 16,
   },
   addButton: {
-    marginBottom: 20,
+    marginBottom: 16,
+    borderRadius: 8,
+    overflow: "hidden",
   },
   gradientButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    padding: 15,
-    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
   },
   addButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
+    color: "white",
     fontWeight: "bold",
     marginLeft: 8,
   },
   form: {
-    backgroundColor: "#ffffff",
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
   },
   formTitle: {
     fontSize: 18,
     fontWeight: "bold",
+    marginBottom: 16,
     color: "#1e293b",
-    marginBottom: 20,
   },
   formGroup: {
-    marginBottom: 15,
-  },
-  row: {
-    flexDirection: "row",
-    marginBottom: 15,
+    marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 5,
+    marginBottom: 8,
+    color: "#475569",
+    fontWeight: "500",
   },
   input: {
-    backgroundColor: "#f1f5f9",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
     borderRadius: 8,
     padding: 12,
-    fontSize: 16,
-    color: "#1e293b",
+    backgroundColor: "#f8fafc",
   },
   inputError: {
-    borderWidth: 1,
     borderColor: "#ef4444",
   },
   errorText: {
     color: "#ef4444",
     fontSize: 12,
-    marginTop: 5,
+    marginTop: 4,
+  },
+  dropdown: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    borderRadius: 8,
+    padding: 12,
+    backgroundColor: "#f8fafc",
+  },
+  dropdownText: {
+    color: "#1e293b",
+  },
+  placeholderText: {
+    color: "#94a3b8",
   },
   submitButton: {
-    marginTop: 20,
+    borderRadius: 8,
+    overflow: "hidden",
+    marginTop: 8,
   },
   submitButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
+    color: "white",
     fontWeight: "bold",
+    textAlign: "center",
   },
   listContainer: {
-    marginTop: 20,
+    marginTop: 8,
   },
   listTitle: {
     fontSize: 18,
     fontWeight: "bold",
+    marginBottom: 16,
     color: "#1e293b",
-    marginBottom: 15,
+  },
+  emptyText: {
+    textAlign: "center",
+    color: "#64748b",
+    marginTop: 32,
   },
   partItem: {
-    backgroundColor: "#ffffff",
-    padding: 15,
-    borderRadius: 12,
-    marginBottom: 10,
+    backgroundColor: "white",
+    borderRadius: 8,
+    padding: 16,
+    marginBottom: 12,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    shadowOffset: {
+      width: 0,
+      height: 1,
+    },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
+    shadowRadius: 3,
     elevation: 2,
   },
   partHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   partCode: {
     fontSize: 14,
@@ -644,58 +721,48 @@ const styles = StyleSheet.create({
   },
   partName: {
     fontSize: 16,
-    fontWeight: "500",
+    fontWeight: "bold",
     color: "#1e293b",
   },
+  partCategory: {
+    fontSize: 14,
+    color: "#475569",
+  },
   stockIndicator: {
-    backgroundColor: "#f1f5f9",
-    padding: 6,
-    borderRadius: 6,
+    backgroundColor: "#e0f2fe",
+    borderRadius: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    alignSelf: "flex-start",
   },
   stockText: {
-    fontSize: 14,
-    color: "#64748b",
-  },
-  stockLow: {
-    color: "#ef4444",
-  },
-  stockHigh: {
-    color: "#22c55e",
+    color: "#0369a1",
+    fontWeight: "bold",
   },
   partDetails: {
-    marginBottom: 10,
+    marginBottom: 12,
   },
   partDescription: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 5,
+    color: "#475569",
+    marginBottom: 8,
   },
   partLocation: {
-    fontSize: 14,
     color: "#64748b",
+    fontSize: 14,
   },
   partActions: {
     flexDirection: "row",
     justifyContent: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-    paddingTop: 10,
   },
   actionButton: {
     padding: 8,
-    borderRadius: 8,
-    marginLeft: 10,
+    borderRadius: 4,
+    marginLeft: 8,
   },
   editButton: {
     backgroundColor: "#dbeafe",
   },
   deleteButton: {
     backgroundColor: "#fee2e2",
-  },
-  emptyText: {
-    textAlign: "center",
-    color: "#64748b",
-    fontSize: 16,
-    marginTop: 20,
   },
 });
