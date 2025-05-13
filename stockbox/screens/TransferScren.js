@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -8,26 +8,32 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-} from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { toast } from 'sonner-native';
-import axios from 'axios';
+  Alert,
+} from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { toast } from "sonner-native";
+import axios from "axios";
 
-const API_BASE_URL = 'http://193.203.165.112:4000/api';
+const API_BASE_URL = "http://193.203.165.112:4000/api";
+const TOKEN =  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzQ3MTIxMTQ5LCJleHAiOjE3NDcxMjQ3NDl9.cvUrafUQPhivmmWtAvSCTo6veKOaTaNAiIajJTmR2nI"
+
+// Configurar Axios con el token
+axios.defaults.baseURL = API_BASE_URL;
+axios.defaults.headers.common["Authorization"] = `Bearer ${TOKEN}`;
 
 export default function TransferScreen({ navigation }) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [selectedPart, setSelectedPart] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [sourceWarehouse, setSourceWarehouse] = useState(null);
   const [targetWarehouse, setTargetWarehouse] = useState(null);
-  const [quantity, setQuantity] = useState('');
-  const [notes, setNotes] = useState('');
+  const [quantity, setQuantity] = useState("");
+  const [notes, setNotes] = useState("");
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
-  const [authCode, setAuthCode] = useState('');
+  const [authCode, setAuthCode] = useState("");
   const [warehouses, setWarehouses] = useState([]);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,8 +41,8 @@ export default function TransferScreen({ navigation }) {
 
   // Simular códigos de autorización válidos
   const validAuthCodes = {
-    'ADMIN123': 'admin',
-    'SUPER456': 'supervisor'
+    ADMIN123: "admin",
+    SUPER456: "supervisor",
   };
 
   useEffect(() => {
@@ -52,118 +58,162 @@ export default function TransferScreen({ navigation }) {
         axios.get(`${API_BASE_URL}/warehouse/all`),
         axios.get(`${API_BASE_URL}/product/all`),
       ]);
-      
-      console.log('Productos:', productsRes.data); // Verifica los datos aquí
+
       setPendingTransfers(transfersRes.data);
       setWarehouses(warehousesRes.data);
       setProducts(productsRes.data);
     } catch (error) {
-      console.error('Error fetching data:', error);
-      toast.error('Error al cargar los datos');
+      console.error("Error fetching data:", error);
+      Alert.alert("Error al cargar los datos");
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredParts = products.filter(part =>
-    part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    part.sku.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredParts = products.filter(
+    (part) =>
+      part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleTransfer = async () => {
     // Validaciones
     if (!sourceWarehouse || !targetWarehouse) {
-      toast.error('Selecciona los almacenes de origen y destino');
+      Alert.alert("Selecciona los almacenes de origen y destino");
       return;
     }
 
     if (sourceWarehouse === targetWarehouse) {
-      toast.error('Los almacenes deben ser diferentes');
+      Alert.alert("Los almacenes deben ser diferentes");
       return;
     }
 
-    const qty = parseInt(quantity);
+    const qty = parseFloat(quantity);
     if (isNaN(qty) || qty <= 0) {
-      toast.error('Ingresa una cantidad válida');
+      Alert.alert("Ingresa una cantidad válida");
       return;
     }
 
     try {
       setTransferring(true);
-      
+
       // Crear la transferencia
       const transferData = {
-        fromWarehouse: sourceWarehouse,
-        toWarehouse: targetWarehouse,
-        notes: notes,
-        details: [{
-          productId: selectedPart.id,
-          quantity: qty
-        }]
+        fromWarehouse: sourceWarehouse, // ID del almacén de origen
+        toWarehouse: targetWarehouse, // ID del almacén de destino
+        userId: 1, // ID del usuario (ajusta según corresponda)
+        notes: notes || "", // Notas opcionales
+        details: [
+          {
+            productId: selectedPart.id, // ID del producto
+            quantity: qty, // Cantidad a transferir
+          },
+        ],
       };
 
-      const response = await axios.post(`${API_BASE_URL}/create-transfer`, transferData);
-      
+      console.log("Datos enviados:", transferData); // Depuración
+
+      // Llamada al endpoint para crear la transferencia
+      const response = await axios.post(
+        `${API_BASE_URL}/stock/create-transfer`,
+        transferData
+      );
+
       // Actualizar la lista de transferencias
       setPendingTransfers([response.data, ...pendingTransfers]);
       setModalVisible(false);
       resetForm();
-      toast.success('Solicitud de traslado creada. Esperando autorización.');
+      Alert.alert("Solicitud de traslado creada. Esperando autorización.");
     } catch (error) {
-      console.error('Error creating transfer:', error);
-      toast.error('Error al crear la transferencia');
+      console.error(
+        "Error creating transfer:",
+        error.response?.data || error.message
+      );
+      Alert.alert(
+        error.response?.data?.message || "Error al crear la transferencia"
+      );
     } finally {
       setTransferring(false);
     }
   };
 
-  const handleAuthorization = () => {
+    const handleAuthorization = async () => {
     if (!authCode) {
-      toast.error('Ingrese el código de autorización');
+      Alert.alert("Error", "Ingrese el ID del usuario que autoriza");
       return;
     }
-
-    const role = validAuthCodes[authCode];
-    if (!role) {
-      toast.error('Código de autorización inválido');
-      return;
+  
+    try {
+      // Mostrar indicador de carga
+      setTransferring(true);
+  
+      // Llamada al endpoint para completar la transferencia
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`,
+        { approvedBy: authCode } // Enviar el ID del usuario como código de autorización
+      );
+  
+      // Actualizar el estado local de las transferencias
+      setPendingTransfers((prevTransfers) =>
+        prevTransfers.map((transfer) =>
+          transfer.id === selectedTransfer.id
+            ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
+            : transfer
+        )
+      );
+  
+      // Restablecer el estado del modal y el código de autorización
+      setAuthCode("");
+      setShowAuthModal(false);
+      setSelectedTransfer(null);
+  
+      // Mostrar mensaje de éxito
+      Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
+    } catch (error) {
+      console.error(
+        "Error completing transfer:",
+        error.response?.data || error.message
+      );
+      Alert.alert(
+        "Error",
+        error.response?.data?.message ||
+          "Ocurrió un error inesperado al completar la transferencia"
+      );
+    } finally {
+      // Ocultar indicador de carga
+      setTransferring(false);
     }
-
-    // Aquí deberías hacer una llamada a la API para aprobar la transferencia
-    // Por ahora solo actualizamos el estado local
-    setPendingTransfers(prevTransfers =>
-      prevTransfers.map(transfer =>
-        transfer.id === selectedTransfer.id
-          ? { ...transfer, status: 'APPROVED', approvedBy: role }
-          : transfer
-      )
-    );
-
-    setAuthCode('');
-    setShowAuthModal(false);
-    setSelectedTransfer(null);
-    toast.success('Traslado autorizado y completado exitosamente');
   };
 
   const resetForm = () => {
     setSelectedPart(null);
     setSourceWarehouse(null);
     setTargetWarehouse(null);
-    setQuantity('');
-    setNotes('');
+    setQuantity("");
+    setNotes("");
   };
 
   const getStockColor = (stock) => {
-    if (stock <= 2) return '#ef4444';
-    if (stock <= 5) return '#f59e0b';
-    return '#22c55e';
+    if (stock <= 2) return "#ef4444";
+    if (stock <= 5) return "#f59e0b";
+    return "#22c55e";
   };
 
   const getProductStock = (productId, warehouseId) => {
-    // Esta función debería obtener el stock de un producto en un almacén específico
-    // Necesitarías una API para esto o incluir esta información en los productos
-    // Por ahora devolvemos un valor fijo
-    return 5; // Valor temporal
+    // Busca el producto por su ID
+    const product = products.find((p) => p.id === productId);
+
+    if (!product) {
+      return 0; // Si no se encuentra el producto, devuelve 0
+    }
+
+    // Verifica si el producto pertenece al almacén especificado
+    const warehouse = warehouses.find((w) => w.id === warehouseId);
+    if (!warehouse || product.warehouseName !== warehouse.name) {
+      return 0; // Si el almacén no coincide, devuelve 0
+    }
+
+    return product.quantity; // Devuelve la cantidad del producto en el almacén
   };
 
   if (loading) {
@@ -181,7 +231,7 @@ export default function TransferScreen({ navigation }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate('Home')}
+          onPress={() => navigation.navigate("Home")}
         >
           <MaterialCommunityIcons name="arrow-left" size={24} color="#64748b" />
           <Text style={styles.backButtonText}>Dashboard</Text>
@@ -210,13 +260,15 @@ export default function TransferScreen({ navigation }) {
               <View style={styles.stockContainer}>
                 {warehouses.map((warehouse) => (
                   <View key={warehouse.id} style={styles.stockItem}>
-                    <Text style={styles.warehouseName}>
-                      {warehouse.name}:
-                    </Text>
+                    <Text style={styles.warehouseName}>{warehouse.name}:</Text>
                     <Text
                       style={[
                         styles.stockValue,
-                        { color: getStockColor(getProductStock(part.id, warehouse.id)) }
+                        {
+                          color: getStockColor(
+                            getProductStock(part.id, warehouse.id)
+                          ),
+                        },
                       ]}
                     >
                       {getProductStock(part.id, warehouse.id)}
@@ -233,7 +285,7 @@ export default function TransferScreen({ navigation }) {
               }}
             >
               <LinearGradient
-                colors={['#2563eb', '#1d4ed8']}
+                colors={["#2563eb", "#1d4ed8"]}
                 style={styles.transferGradient}
               >
                 <MaterialCommunityIcons
@@ -256,16 +308,18 @@ export default function TransferScreen({ navigation }) {
               <View key={transfer.id} style={styles.pendingCard}>
                 <View style={styles.pendingInfo}>
                   <Text style={styles.pendingPartName}>
-                    {transfer.details[0]?.product?.name || 'Producto no disponible'}
+                    {transfer.details[0]?.product?.name ||
+                      "Producto no disponible"}
                   </Text>
                   <Text style={styles.pendingDetails}>
-                    Cantidad: {transfer.details[0]?.quantity} • De: {transfer.from?.name} • A: {transfer.to?.name}
+                    Cantidad: {transfer.details[0]?.quantity} • De:{" "}
+                    {transfer.from?.name} • A: {transfer.to?.name}
                   </Text>
                   <Text style={styles.pendingDate}>
                     {new Date(transfer.createdAt).toLocaleDateString()}
                   </Text>
                 </View>
-                {transfer.status === 'PENDING' && (
+                {transfer.status === "PENDING" && (
                   <TouchableOpacity
                     style={styles.authorizeButton}
                     onPress={() => {
@@ -273,12 +327,20 @@ export default function TransferScreen({ navigation }) {
                       setShowAuthModal(true);
                     }}
                   >
-                    <MaterialCommunityIcons name="shield-check" size={24} color="#2563eb" />
+                    <MaterialCommunityIcons
+                      name="shield-check"
+                      size={24}
+                      color="#2563eb"
+                    />
                   </TouchableOpacity>
                 )}
-                {transfer.status === 'APPROVED' && (
+                {transfer.status === "APPROVED" && (
                   <View style={styles.approvedBadge}>
-                    <MaterialCommunityIcons name="check-circle" size={24} color="#22c55e" />
+                    <MaterialCommunityIcons
+                      name="check-circle"
+                      size={24}
+                      color="#22c55e"
+                    />
                     <Text style={styles.approvedText}>Aprobado</Text>
                   </View>
                 )}
@@ -289,25 +351,29 @@ export default function TransferScreen({ navigation }) {
       )}
 
       {/* Modal de autorización */}
-      <Modal
-        visible={showAuthModal}
-        transparent={true}
-        animationType="slide"
-      >
+      <Modal visible={showAuthModal} transparent={true} animationType="slide">
         <View style={styles.authModalContainer}>
           <View style={styles.authModalContent}>
             <View style={styles.authModalHeader}>
               <Text style={styles.authModalTitle}>Autorizar Traslado</Text>
-              <TouchableOpacity onPress={() => {
-                setShowAuthModal(false);
-                setAuthCode('');
-              }}>
-                <MaterialCommunityIcons name="close" size={24} color="#64748b" />
+              <TouchableOpacity
+                onPress={() => {
+                  setShowAuthModal(false);
+                  setAuthCode("");
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="close"
+                  size={24}
+                  color="#64748b"
+                />
               </TouchableOpacity>
             </View>
-            
+
             <View style={styles.authModalBody}>
-              <Text style={styles.authModalSubtitle}>Ingrese el código de autorización</Text>
+              <Text style={styles.authModalSubtitle}>
+                Ingrese el código de autorización
+              </Text>
               <TextInput
                 style={styles.authInput}
                 value={authCode}
@@ -320,7 +386,7 @@ export default function TransferScreen({ navigation }) {
                 onPress={handleAuthorization}
               >
                 <LinearGradient
-                  colors={['#2563eb', '#1d4ed8']}
+                  colors={["#2563eb", "#1d4ed8"]}
                   style={styles.authButtonGradient}
                 >
                   <Text style={styles.authButtonText}>Autorizar</Text>
@@ -346,7 +412,11 @@ export default function TransferScreen({ navigation }) {
                 onPress={() => setModalVisible(false)}
                 style={styles.closeButton}
               >
-                <MaterialCommunityIcons name="close" size={24} color="#64748b" />
+                <MaterialCommunityIcons
+                  name="close"
+                  size={24}
+                  color="#64748b"
+                />
               </TouchableOpacity>
             </View>
 
@@ -364,14 +434,16 @@ export default function TransferScreen({ navigation }) {
                       key={warehouse.id}
                       style={[
                         styles.warehouseButton,
-                        sourceWarehouse === warehouse.id && styles.warehouseButtonSelected
+                        sourceWarehouse === warehouse.id &&
+                          styles.warehouseButtonSelected,
                       ]}
                       onPress={() => setSourceWarehouse(warehouse.id)}
                     >
                       <Text
                         style={[
                           styles.warehouseButtonText,
-                          sourceWarehouse === warehouse.id && styles.warehouseButtonTextSelected
+                          sourceWarehouse === warehouse.id &&
+                            styles.warehouseButtonTextSelected,
                         ]}
                       >
                         {warehouse.name}
@@ -379,7 +451,8 @@ export default function TransferScreen({ navigation }) {
                       <Text
                         style={[
                           styles.warehouseStock,
-                          sourceWarehouse === warehouse.id && styles.warehouseButtonTextSelected
+                          sourceWarehouse === warehouse.id &&
+                            styles.warehouseButtonTextSelected,
                         ]}
                       >
                         Stock: {getProductStock(selectedPart.id, warehouse.id)}
@@ -396,14 +469,16 @@ export default function TransferScreen({ navigation }) {
                       key={warehouse.id}
                       style={[
                         styles.warehouseButton,
-                        targetWarehouse === warehouse.id && styles.warehouseButtonSelected
+                        targetWarehouse === warehouse.id &&
+                          styles.warehouseButtonSelected,
                       ]}
                       onPress={() => setTargetWarehouse(warehouse.id)}
                     >
                       <Text
                         style={[
                           styles.warehouseButtonText,
-                          targetWarehouse === warehouse.id && styles.warehouseButtonTextSelected
+                          targetWarehouse === warehouse.id &&
+                            styles.warehouseButtonTextSelected,
                         ]}
                       >
                         {warehouse.name}
@@ -411,7 +486,8 @@ export default function TransferScreen({ navigation }) {
                       <Text
                         style={[
                           styles.warehouseStock,
-                          targetWarehouse === warehouse.id && styles.warehouseButtonTextSelected
+                          targetWarehouse === warehouse.id &&
+                            styles.warehouseButtonTextSelected,
                         ]}
                       >
                         Stock: {getProductStock(selectedPart.id, warehouse.id)}
@@ -448,7 +524,7 @@ export default function TransferScreen({ navigation }) {
                   disabled={transferring}
                 >
                   <LinearGradient
-                    colors={['#2563eb', '#1d4ed8']}
+                    colors={["#2563eb", "#1d4ed8"]}
                     style={styles.confirmGradient}
                   >
                     {transferring ? (
@@ -472,60 +548,60 @@ export default function TransferScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: "#f8fafc",
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 16,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: "#e2e8f0",
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     marginRight: 16,
   },
   backButtonText: {
     marginLeft: 8,
-    color: '#64748b',
+    color: "#64748b",
     fontSize: 16,
   },
   headerTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
   },
   searchContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     margin: 16,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
   },
   searchInput: {
     flex: 1,
     marginLeft: 8,
-    color: '#1e293b',
+    color: "#1e293b",
   },
   partsList: {
     flex: 1,
     paddingHorizontal: 16,
   },
   partCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -536,43 +612,43 @@ const styles = StyleSheet.create({
   },
   partCode: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
     marginBottom: 4,
   },
   partName: {
     fontSize: 14,
-    color: '#64748b',
+    color: "#64748b",
     marginBottom: 8,
   },
   stockContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
   },
   stockItem: {
-    flexDirection: 'row',
+    flexDirection: "row",
     marginRight: 16,
     marginBottom: 4,
   },
   warehouseName: {
     fontSize: 12,
-    color: '#64748b',
+    color: "#64748b",
     marginRight: 4,
   },
   stockValue: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   transferButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   transferGradient: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   pendingTransfersContainer: {
     marginTop: 16,
@@ -580,22 +656,22 @@ const styles = StyleSheet.create({
   },
   pendingTitle: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
     marginBottom: 8,
   },
   pendingList: {
     maxHeight: 200,
   },
   pendingCard: {
-    backgroundColor: '#ffffff',
+    backgroundColor: "#ffffff",
     borderRadius: 8,
     padding: 12,
     marginBottom: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    shadowColor: '#000',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
@@ -606,113 +682,113 @@ const styles = StyleSheet.create({
   },
   pendingPartName: {
     fontSize: 14,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
     marginBottom: 4,
   },
   pendingDetails: {
     fontSize: 12,
-    color: '#64748b',
+    color: "#64748b",
     marginBottom: 4,
   },
   pendingDate: {
     fontSize: 10,
-    color: '#94a3b8',
+    color: "#94a3b8",
   },
   authorizeButton: {
     padding: 8,
   },
   approvedBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     padding: 8,
   },
   approvedText: {
     marginLeft: 4,
-    color: '#22c55e',
+    color: "#22c55e",
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: "bold",
   },
   authModalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   authModalContent: {
-    width: '80%',
-    backgroundColor: '#ffffff',
+    width: "80%",
+    backgroundColor: "#ffffff",
     borderRadius: 8,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   authModalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: "#e2e8f0",
   },
   authModalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
   },
   authModalBody: {
     padding: 16,
   },
   authModalSubtitle: {
     fontSize: 14,
-    color: '#64748b',
+    color: "#64748b",
     marginBottom: 16,
   },
   authInput: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     borderRadius: 4,
     padding: 12,
     marginBottom: 16,
-    color: '#1e293b',
+    color: "#1e293b",
   },
   authButton: {
     height: 48,
     borderRadius: 4,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   authButtonGradient: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   authButtonText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+    color: "#ffffff",
+    fontWeight: "bold",
   },
   modalContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
   },
   modalContent: {
-    width: '90%',
-    maxHeight: '90%',
-    backgroundColor: '#ffffff',
+    width: "90%",
+    maxHeight: "90%",
+    backgroundColor: "#ffffff",
     borderRadius: 8,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    borderBottomColor: "#e2e8f0",
   },
   modalTitle: {
     fontSize: 18,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
   },
   closeButton: {
     padding: 4,
@@ -722,82 +798,82 @@ const styles = StyleSheet.create({
   },
   selectedPartInfo: {
     fontSize: 16,
-    fontWeight: 'bold',
-    color: '#1e293b',
+    fontWeight: "bold",
+    color: "#1e293b",
     marginBottom: 16,
   },
   inputLabel: {
     fontSize: 14,
-    color: '#64748b',
+    color: "#64748b",
     marginBottom: 8,
   },
   warehouseButtons: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     marginBottom: 16,
   },
   warehouseButton: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     borderRadius: 4,
     padding: 8,
     marginRight: 8,
     marginBottom: 8,
   },
   warehouseButtonSelected: {
-    borderColor: '#2563eb',
-    backgroundColor: '#eff6ff',
+    borderColor: "#2563eb",
+    backgroundColor: "#eff6ff",
   },
   warehouseButtonText: {
     fontSize: 12,
-    color: '#64748b',
+    color: "#64748b",
   },
   warehouseButtonTextSelected: {
-    color: '#2563eb',
-    fontWeight: 'bold',
+    color: "#2563eb",
+    fontWeight: "bold",
   },
   warehouseStock: {
     fontSize: 10,
-    color: '#94a3b8',
+    color: "#94a3b8",
   },
   quantityInput: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     borderRadius: 4,
     padding: 12,
     marginBottom: 16,
-    color: '#1e293b',
+    color: "#1e293b",
   },
   notesInput: {
     borderWidth: 1,
-    borderColor: '#e2e8f0',
+    borderColor: "#e2e8f0",
     borderRadius: 4,
     padding: 12,
     marginBottom: 16,
-    color: '#1e293b',
-    textAlignVertical: 'top',
+    color: "#1e293b",
+    textAlignVertical: "top",
   },
   confirmButton: {
     height: 48,
     borderRadius: 4,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   confirmGradient: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   confirmButtonText: {
-    color: '#ffffff',
-    fontWeight: 'bold',
+    color: "#ffffff",
+    fontWeight: "bold",
   },
   loadingContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
   },
   loadingText: {
     marginTop: 16,
-    color: '#64748b',
+    color: "#64748b",
   },
 });
