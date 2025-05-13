@@ -8,7 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert 
+  Alert
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -16,39 +16,13 @@ import axios from 'axios';
 
 const API_URL = 'http://193.203.165.112:4000';
 
-
-
-const DashboardCard = ({ title, value, icon, color }) => (
-  <View style={[styles.card, { borderLeftColor: color }]}>
-    <View style={styles.cardContent}>
-      <MaterialCommunityIcons name={icon} size={24} color={color} />
-      <Text style={styles.cardTitle}>{title}</Text>
-      <Text style={[styles.cardValue, { color }]}>{value}</Text>
-    </View>
-  </View>
-);
-
-const QuickActionButton = ({ title, icon, onPress, color }) => (
-  <TouchableOpacity style={styles.quickActionButton} onPress={onPress}>
-    <LinearGradient
-      colors={[color, color.replace('1)', '0.8)')]}
-      style={styles.quickActionGradient}
-    >
-      <MaterialCommunityIcons name={icon} size={24} color="white" />
-      <Text style={styles.quickActionText}>{title}</Text>
-    </LinearGradient>
-  </TouchableOpacity>
-);
-
-export default function HomeScreen({ navigation }) {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+export default function LoginScreen({ navigation, setIsLoggedIn }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState('');
   const [passwordError, setPasswordError] = useState('');
-  const [isLoading, setIsLoading] = useState(false); // Agrega esta línea
-
+  const [isLoading, setIsLoading] = useState(false);
 
   const validateEmail = (email) => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -77,43 +51,27 @@ export default function HomeScreen({ navigation }) {
     return true;
   };
 
-
   const handleLogin = async () => {
     const isEmailValid = validateEmail(email);
     const isPasswordValid = validatePassword(password);
     
     if (!isEmailValid || !isPasswordValid) return;
-  
-    function LoginScreen({ navigation, setIsLoggedIn }) {
-      const handleLogin = () => {
-        // Lógica de autenticación aquí...
-        setIsLoggedIn(true); // Redirige automáticamente a Home
-      };
     
-      return (
-        // Tu formulario de login
-        <Button title="Iniciar sesión OK" onPress={handleLogin} />
-      );
-    }
+    setIsLoading(true);
     
     try {
       const response = await axios.post(`${API_URL}/api/auth/login`, {
         email: email.trim(),
         password: password
-      }, {
       });
-  
-      // Si la respuesta es exitosa (asumiendo que el backend devuelve un token)
+
+      // Autenticación exitosa
       setIsLoggedIn(true);
-      
-      // Opcional: Guardar datos del usuario si los necesitas
-      // console.log('Respuesta del servidor:', response.data);
       
     } catch (error) {
       let errorMessage = 'Error al iniciar sesión';
       
       if (error.response) {
-        // Error de respuesta del servidor (4xx, 5xx)
         if (error.response.status === 401) {
           errorMessage = 'Email o contraseña incorrectos';
         } else {
@@ -131,119 +89,6 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const recentMovements = [
-    { id: 1, type: 'entrada', item: 'Motor 3HP', quantity: 5, date: '23/02/2024' },
-    { id: 2, type: 'salida', item: 'Filtro Aire', quantity: 2, date: '23/02/2024' },
-    { id: 3, type: 'traslado', item: 'Bomba Hidráulica', quantity: 1, date: '22/02/2024' },
-  ];
-
-  if (isLoggedIn) {
-    return (
-      <ScrollView style={styles.dashboardContainer}>
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <Text style={styles.welcomeText}>StockBox</Text>
-            <TouchableOpacity onPress={() => setIsLoggedIn(false)}>
-              <MaterialCommunityIcons name="logout" size={24} color="#64748b" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.dateText}>
-            {new Date().toLocaleDateString('es-ES', { 
-              weekday: 'long', 
-              year: 'numeric', 
-              month: 'long', 
-              day: 'numeric' 
-            })}
-          </Text>
-        </View>
-
-        <View style={styles.statsContainer}>
-          <DashboardCard
-            title="Stock Total"
-            value="1,234"
-            icon="package-variant"
-            color="rgba(37, 99, 235, 1)"
-          />
-          <DashboardCard
-            title="Alertas"
-            value="5"
-            icon="alert-circle"
-            color="rgba(239, 68, 68, 1)"
-          />
-          <DashboardCard
-            title="Movimientos"
-            value="28"
-            icon="trending-up"
-            color="rgba(34, 197, 94, 1)"
-          />
-        </View>
-
-        <View style={styles.quickActionsContainer}>
-          <Text style={styles.sectionTitle}>Acciones Rápidas</Text>
-          <View style={styles.quickActionsGrid}>
-            <QuickActionButton
-              title="Agregar Refacción"
-              icon="plus-circle"
-              color="rgba(37, 99, 235, 1)"              onPress={() => navigation.navigate('Search')}
-            />
-            <QuickActionButton
-              title="Buscar"
-              icon="magnify"
-              color="rgba(34, 197, 94, 1)"              onPress={() => navigation.navigate('Search')}
-            />
-            <QuickActionButton
-              title="Traslado"
-              icon="transfer"
-              color="rgba(234, 88, 12, 1)"              onPress={() => navigation.navigate('Search')}
-            />            <QuickActionButton
-              title="Reportes"
-              icon="file-chart"
-              color="rgba(109, 40, 217, 1)"
-              onPress={() => navigation.navigate('Reports')}
-            />
-            <QuickActionButton
-              title="Usuarios"
-              icon="account-multiple"
-              color="rgba(147, 51, 234, 1)"
-              onPress={() => navigation.navigate('Users')}
-            />
-          </View>
-        </View>
-
-        <View style={styles.recentMovementsContainer}>
-          <Text style={styles.sectionTitle}>Movimientos Recientes</Text>
-          {recentMovements.map((movement) => (
-            <View key={movement.id} style={styles.movementItem}>
-              <MaterialCommunityIcons
-                name={
-                  movement.type === 'entrada'
-                    ? 'arrow-down-circle'
-                    : movement.type === 'salida'
-                    ? 'arrow-up-circle'
-                    : 'arrow-left-right-circle'
-                }
-                size={24}
-                color={
-                  movement.type === 'entrada'
-                    ? '#22c55e'
-                    : movement.type === 'salida'
-                    ? '#ef4444'
-                    : '#f59e0b'
-                }
-              />
-              <View style={styles.movementInfo}>
-                <Text style={styles.movementTitle}>{movement.item}</Text>
-                <Text style={styles.movementSubtitle}>
-                  Cantidad: {movement.quantity} • {movement.date}
-                </Text>
-              </View>
-            </View>
-          ))}
-        </View>
-      </ScrollView>
-    );
-  }
-
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -251,14 +96,23 @@ export default function HomeScreen({ navigation }) {
     >
       <ScrollView contentContainerStyle={styles.scrollContainer}>
         <View style={styles.logoContainer}>
-          <MaterialCommunityIcons name="package-variant-closed" size={80} color="#2563eb" />
+          <MaterialCommunityIcons 
+            name="package-variant-closed" 
+            size={80} 
+            color="#2563eb" 
+          />
           <Text style={styles.logoText}>StockBox</Text>
           <Text style={styles.subtitle}>Gestión de Refacciones</Text>
         </View>
 
         <View style={styles.formContainer}>
           <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="email-outline" size={24} color="#64748b" style={styles.inputIcon} />
+            <MaterialCommunityIcons 
+              name="email-outline" 
+              size={24} 
+              color="#64748b" 
+              style={styles.inputIcon} 
+            />
             <TextInput
               style={styles.input}
               placeholder="Correo electrónico"
@@ -274,7 +128,12 @@ export default function HomeScreen({ navigation }) {
           {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
 
           <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="lock-outline" size={24} color="#64748b" style={styles.inputIcon} />
+            <MaterialCommunityIcons 
+              name="lock-outline" 
+              size={24} 
+              color="#64748b" 
+              style={styles.inputIcon} 
+            />
             <TextInput
               style={styles.input}
               placeholder="Contraseña"
@@ -308,6 +167,7 @@ export default function HomeScreen({ navigation }) {
           <TouchableOpacity
             style={styles.loginButton}
             onPress={handleLogin}
+            disabled={isLoading}
           >
             <LinearGradient
               colors={['#2563eb', '#1d4ed8']}
@@ -315,11 +175,11 @@ export default function HomeScreen({ navigation }) {
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 0 }}
             >
-              <Text style={styles.loginButtonText}>Iniciar Sesión</Text>
+              <Text style={styles.loginButtonText}>
+                {isLoading ? 'Cargando...' : 'Iniciar Sesión'}
+              </Text>
             </LinearGradient>
           </TouchableOpacity>
-
-          
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
