@@ -253,19 +253,7 @@ const ReportScreen = ({ navigation }) => {
             </LinearGradient>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.actionButton} disabled>
-            <LinearGradient
-              colors={["#22c55e", "#16a34a"]}
-              style={[styles.actionGradient, { opacity: 0.6 }]}
-            >
-              <MaterialCommunityIcons
-                name="microsoft-excel"
-                size={24}
-                color="white"
-              />
-              <Text style={styles.actionButtonText}>Exportar Excel</Text>
-            </LinearGradient>
-          </TouchableOpacity>
+          
         </View>
       </ScrollView>
     </View>

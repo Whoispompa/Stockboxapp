@@ -1,18 +1,17 @@
-import 'react-native-gesture-handler';
-import React, { useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
-import { createStackNavigator } from '@react-navigation/stack';
-import { Text, View, StyleSheet } from 'react-native';
-import LoginScreen from './screens/LoginScreen';
-import HomeScreen from './screens/HomeScreen';
-import UserScreen from './screens/UserScreen';
-import PartsManagementScreen from './screens/PartsManagement';
-import ReportScreen from './screens/ReportScreen';
-import TransferScreen from './screens/TransferScren';
-import SearchScreen from './screens/SearchScreen';
-import { TouchableOpacity } from 'react-native';
+import "react-native-gesture-handler";
+import React, { useState } from "react";
+import { NavigationContainer } from "@react-navigation/native";
+import { createStackNavigator } from "@react-navigation/stack";
+import { Text, View, StyleSheet } from "react-native";
+import LoginScreen from "./screens/LoginScreen";
+import HomeScreen from "./screens/HomeScreen";
+import UserScreen from "./screens/UserScreen";
+import PartsManagementScreen from "./screens/PartsManagement";
+import ReportScreen from "./screens/ReportScreen";
+import TransferScreen from "./screens/TransferScren";
+import SearchScreen from "./screens/SearchScreen";
+import { TouchableOpacity } from "react-native";
 import RequestPartScreen from "./screens/RequestPart";
-
 
 const Stack = createStackNavigator();
 
@@ -25,7 +24,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    console.error('Error Boundary caught:', error, errorInfo);
+    console.error("Error Boundary caught:", error, errorInfo);
     this.setState({ errorInfo });
   }
 
@@ -35,7 +34,7 @@ class ErrorBoundary extends React.Component {
         <View style={styles.errorContainer}>
           <Text style={styles.errorTitle}>¡Algo salió mal!</Text>
           <Text style={styles.errorText}>
-            {this.state.error?.toString() || 'Error desconocido'}
+            {this.state.error?.toString() || "Error desconocido"}
           </Text>
           <TouchableOpacity
             style={styles.reloadButton}
@@ -58,49 +57,48 @@ export default function App() {
       <ErrorBoundary>
         <Stack.Navigator>
           {!isLoggedIn ? (
-            <Stack.Screen 
-              name="Login" 
-              options={{ headerShown: false }}
-            >
-              {(props) => <LoginScreen {...props} setIsLoggedIn={setIsLoggedIn} />}
+            <Stack.Screen name="Login" options={{ headerShown: false }}>
+              {(props) => (
+                <LoginScreen {...props} setIsLoggedIn={setIsLoggedIn} />
+              )}
             </Stack.Screen>
           ) : (
             <>
-              <Stack.Screen 
-                name="Home" 
-                component={HomeScreen} 
+              <Stack.Screen name="Home" options={{ headerShown: false }}>
+                {(props) => (
+                  <HomeScreen {...props} setIsLoggedIn={setIsLoggedIn} />
+                )}
+              </Stack.Screen>
+              <Stack.Screen
+                name="User"
+                component={UserScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="User" 
-                component={UserScreen} 
+              <Stack.Screen
+                name="AgregarRefaccion"
+                component={PartsManagementScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="AgregarRefaccion" 
-                component={PartsManagementScreen} 
+              <Stack.Screen
+                name="Reportes"
+                component={ReportScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="Reportes" 
-                component={ReportScreen} 
+              <Stack.Screen
+                name="Traslado"
+                component={TransferScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="Traslado" 
-                component={TransferScreen} 
+              <Stack.Screen
+                name="Buscar"
+                component={SearchScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-                name="Buscar" 
-                component={SearchScreen} 
+              <Stack.Screen
+                name="RequestPart"
+                component={RequestPartScreen}
                 options={{ headerShown: false }}
               />
-              <Stack.Screen 
-              name="RequestPart" 
-              component={RequestPartScreen} 
-              options={{ headerShown: false }}
-            />
             </>
           )}
         </Stack.Navigator>
@@ -112,30 +110,30 @@ export default function App() {
 const styles = StyleSheet.create({
   errorContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+    justifyContent: "center",
+    alignItems: "center",
     padding: 20,
-    backgroundColor: '#f8d7da',
+    backgroundColor: "#f8d7da",
   },
   errorTitle: {
     fontSize: 24,
-    fontWeight: 'bold',
-    color: '#721c24',
+    fontWeight: "bold",
+    color: "#721c24",
     marginBottom: 10,
   },
   errorText: {
     fontSize: 16,
-    color: '#721c24',
+    color: "#721c24",
     marginBottom: 20,
-    textAlign: 'center',
+    textAlign: "center",
   },
   reloadButton: {
-    backgroundColor: '#721c24',
+    backgroundColor: "#721c24",
     padding: 10,
     borderRadius: 5,
   },
   reloadButtonText: {
-    color: 'white',
-    fontWeight: 'bold',
+    color: "white",
+    fontWeight: "bold",
   },
 });

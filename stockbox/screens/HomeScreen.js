@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
@@ -34,10 +34,11 @@ const QuickActionButton = ({ title, icon, onPress, color }) => (
   </TouchableOpacity>
 );
 
-export default function HomeScreen({ navigation }) {
+export default function HomeScreen({ navigation, setIsLoggedIn }) {
   const [recentMovements, setRecentMovements] = useState([]);
   const [parts, setParts] = useState([]);
   const [stockTotal, setStockTotal] = useState(0);
+  const [lowStockCount, setLowStockCount] = useState(0);
 
   // Cargar movimientos cada vez que la pantalla toma foco
   const loadMovements = async () => {
@@ -50,8 +51,7 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  // Cargar productos y calcular stock total
-  const [lowStockCount, setLowStockCount] = useState(0);
+  // Cargar productos y calcular stock total y alertas
   const loadParts = async () => {
     try {
       const token = await AsyncStorage.getItem("authToken");
@@ -91,7 +91,7 @@ export default function HomeScreen({ navigation }) {
   // Función para cerrar sesión
   const handleLogout = async () => {
     await AsyncStorage.removeItem("authToken");
-    navigation.replace("Login");
+    setIsLoggedIn(false);
   };
 
   return (
@@ -181,7 +181,7 @@ export default function HomeScreen({ navigation }) {
 
       {/* Movimientos recientes */}
       <View style={styles.recentMovementsContainer}>
-        <Text className={styles.sectionTitle}>Movimientos Recientes</Text>
+        <Text style={styles.sectionTitle}>Movimientos Recientes</Text>
         {recentMovements.length === 0 ? (
           <Text style={{ color: "#64748b" }}>
             No hay movimientos recientes.
