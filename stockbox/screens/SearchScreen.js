@@ -1,96 +1,84 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   TextInput,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
+  Alert,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-
-const MOCK_PARTS = [
-  {
-    id: '1',
-    code: 'MOT-3HP-001',
-    name: 'Motor 3HP Siemens',
-    description: 'Motor trifásico 3HP 220V',
-    category: 'Motores',
-    location: 'A-123',
-    stock: 5,
-    minStock: 2,
-    maxStock: 10,
-    lastMovement: '2024-04-08',
-  },
-  {
-    id: '2',
-    code: 'ROD-6205-001',
-    name: 'Rodamiento 6205',
-    description: 'Rodamiento de bolas SKF',
-    category: 'Rodamientos',
-    location: 'B-234',
-    stock: 15,
-    minStock: 5,
-    maxStock: 20,
-    lastMovement: '2024-04-07',
-  },
-  {
-    id: '3',
-    code: 'FIL-AIR-001',
-    name: 'Filtro de Aire',
-    description: 'Filtro de aire industrial',
-    category: 'Filtros',
-    location: 'C-345',
-    stock: 8,
-    minStock: 3,
-    maxStock: 15,
-    lastMovement: '2024-04-06',
-  },
-];
+import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function SearchScreen({ navigation }) {
+  const [parts, setParts] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [stockFilter, setStockFilter] = useState('all'); // all, low, normal, high
+  const [categories, setCategories] = useState(['Todas']);
+  const [selectedCategory, setSelectedCategory] = useState('Todas');
+  const [selectedStockLevel, setSelectedStockLevel] = useState('Todos');
 
-  const categories = ['Motores', 'Rodamientos', 'Filtros'];
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        // Productos
+        const response = await axios.get(
+          'http://193.203.165.112:4000/api/product/all',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setParts(response.data);
 
-  const filterParts = () => {
-    return MOCK_PARTS.filter(part => {
-      const matchesSearch = 
-        part.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        part.description.toLowerCase().includes(searchQuery.toLowerCase());
+        // Categorías
+        const catRes = await axios.get(
+          'http://193.203.165.112:4000/api/category',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setCategories(['Todas', ...catRes.data.map((c) => c.name)]);
+      } catch (error) {
+        Alert.alert('Error', 'No se pudieron cargar los datos');
+      }
+    };
+    fetchData();
+  }, []);
 
-      const matchesCategory = 
-        !selectedCategory || part.category === selectedCategory;
+  const STOCK_LEVELS = ['Todos', 'Bajo', 'Normal', 'Alto'];
 
-      const matchesStock = (() => {
-        switch (stockFilter) {
-          case 'low':
-            return part.stock <= part.minStock;
-          case 'normal':
-            return part.stock > part.minStock && part.stock < part.maxStock;
-          case 'high':
-            return part.stock >= part.maxStock;
-          default:
-            return true;
-        }
-      })();
-
-      return matchesSearch && matchesCategory && matchesStock;
-    });
+  const getStockLevel = (quantity) => {
+    if (quantity <= 5) return 'Bajo';
+    if (quantity <= 15) return 'Normal';
+    return 'Alto';
   };
 
-  const getStockStatus = (part) => {
-    if (part.stock <= part.minStock) return { color: '#ef4444', text: 'Bajo' };
-    if (part.stock >= part.maxStock) return { color: '#22c55e', text: 'Alto' };
-    return { color: '#f59e0b', text: 'Normal' };
+  const filteredParts = parts.filter((part) => {
+    const matchesSearch =
+      part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.sku?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory =
+      selectedCategory === 'Todas' ||
+      part.categoryName === selectedCategory;
+    const stockLevel = getStockLevel(part.quantity);
+    const matchesStockLevel =
+      selectedStockLevel === 'Todos' || stockLevel === selectedStockLevel;
+    return matchesSearch && matchesCategory && matchesStockLevel;
+  });
+
+  const handleEdit = (item) => {
+    navigation.navigate('PartsManagement', { partId: item.id });
   };
 
-  const filteredParts = filterParts();
+  const handleTransfer = (item) => {
+    navigation.navigate('Transfer', { partId: item.id });
+  };
 
   return (
     <View style={styles.container}>
@@ -100,169 +88,98 @@ export default function SearchScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.navigate('Home')}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#64748b" />
-          <Text style={styles.backButtonText}>Dashboard</Text>
+          <Ionicons name="arrow-back" size={24} color="#007bff" />
+          <Text style={styles.backButtonText}>Menú</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Búsqueda de Refacciones</Text>
+        <Text style={styles.title}>Búsqueda de Refacciones</Text>
       </View>
 
-      {/* Barra de búsqueda */}
+      {/* Search Bar */}
       <View style={styles.searchContainer}>
-        <View style={styles.searchBar}>
-          <MaterialCommunityIcons name="magnify" size={24} color="#64748b" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar por código, nombre o descripción..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          <TouchableOpacity
-            style={styles.filterButton}
-            onPress={() => setShowFilters(!showFilters)}
-          >
-            <MaterialCommunityIcons 
-              name={showFilters ? "filter-off" : "filter"} 
-              size={24} 
-              color="#64748b" 
-            />
-          </TouchableOpacity>
-        </View>
+        <Ionicons name="search-outline" size={20} color="#6c757d" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar refacciones..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+        <TouchableOpacity onPress={() => setSearchQuery('')}>
+          <Ionicons name="close-outline" size={20} color="#6c757d" />
+        </TouchableOpacity>
       </View>
 
-      {/* Filtros */}
-      {showFilters && (
-        <View style={styles.filtersContainer}>
-          {/* Categorías */}
-          <Text style={styles.filterTitle}>Categorías</Text>
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false}
-            style={styles.categoriesContainer}
+      {/* Categories */}
+      <Text style={styles.sectionTitle}>Categorías</Text>
+      <View style={styles.filterContainer}>
+        {categories.map((category) => (
+          <TouchableOpacity
+            key={category}
+            style={[
+              styles.filterButton,
+              selectedCategory === category && styles.activeFilterButton,
+            ]}
+            onPress={() => setSelectedCategory(category)}
           >
-            <TouchableOpacity
+            <Text
               style={[
-                styles.categoryChip,
-                !selectedCategory && styles.categoryChipSelected
+                styles.filterText,
+                selectedCategory === category && styles.activeFilterText,
               ]}
-              onPress={() => setSelectedCategory('')}
             >
-              <Text style={[
-                styles.categoryChipText,
-                !selectedCategory && styles.categoryChipTextSelected
-              ]}>
-                Todas
+              {category}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Stock Levels */}
+      <Text style={styles.sectionTitle}>Nivel de Stock</Text>
+      <View style={styles.filterContainer}>
+        {STOCK_LEVELS.map((level) => (
+          <TouchableOpacity
+            key={level}
+            style={[
+              styles.filterButton,
+              selectedStockLevel === level && styles.activeFilterButton,
+            ]}
+            onPress={() => setSelectedStockLevel(level)}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                selectedStockLevel === level && styles.activeFilterText,
+              ]}
+            >
+              {level}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* Parts List */}
+      <FlatList
+        data={filteredParts}
+        keyExtractor={(item) => item.id?.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.partCard}>
+            <Text style={styles.partCode}>{item.sku}</Text>
+            <Text style={styles.partName}>{item.name}</Text>
+            <Text style={styles.partDescription}>{item.description}</Text>
+            <View style={styles.partDetails}>
+              <Text style={styles.partDetail}>📦 {item.categoryName}</Text>
+              <Text style={styles.partDetail}>📍 {item.warehouseName}</Text>
+              <Text style={styles.partDetail}>
+                📊 Stock: {item.quantity} ({getStockLevel(item.quantity)})
               </Text>
-            </TouchableOpacity>
-            {categories.map((category) => (
-              <TouchableOpacity
-                key={category}
-                style={[
-                  styles.categoryChip,
-                  selectedCategory === category && styles.categoryChipSelected
-                ]}
-                onPress={() => setSelectedCategory(category)}
-              >
-                <Text style={[
-                  styles.categoryChipText,
-                  selectedCategory === category && styles.categoryChipTextSelected
-                ]}>
-                  {category}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* Filtro de Stock */}
-          <Text style={styles.filterTitle}>Nivel de Stock</Text>
-          <View style={styles.stockFilterContainer}>
-            {[
-              { id: 'all', label: 'Todos' },
-              { id: 'low', label: 'Bajo' },
-              { id: 'normal', label: 'Normal' },
-              { id: 'high', label: 'Alto' }
-            ].map((filter) => (
-              <TouchableOpacity
-                key={filter.id}
-                style={[
-                  styles.stockFilterChip,
-                  stockFilter === filter.id && styles.stockFilterChipSelected
-                ]}
-                onPress={() => setStockFilter(filter.id)}
-              >
-                <Text style={[
-                  styles.stockFilterChipText,
-                  stockFilter === filter.id && styles.stockFilterChipTextSelected
-                ]}>
-                  {filter.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-      )}
-
-      {/* Lista de resultados */}
-      <ScrollView style={styles.resultsList}>
-        {filteredParts.map((part) => {
-          const stockStatus = getStockStatus(part);
-          return (
-            <View key={part.id} style={styles.resultCard}>
-              <View style={styles.resultHeader}>
-                <View>
-                  <Text style={styles.resultCode}>{part.code}</Text>
-                  <Text style={styles.resultName}>{part.name}</Text>
-                </View>
-                <View style={[styles.stockBadge, { backgroundColor: `${stockStatus.color}15` }]}>
-                  <Text style={[styles.stockBadgeText, { color: stockStatus.color }]}>
-                    {stockStatus.text}
-                  </Text>
-                </View>
-              </View>
-              
-              <Text style={styles.resultDescription}>{part.description}</Text>
-              
-              <View style={styles.resultDetails}>
-                <View style={styles.detailItem}>
-                  <MaterialCommunityIcons name="tag" size={16} color="#64748b" />
-                  <Text style={styles.detailText}>{part.category}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <MaterialCommunityIcons name="map-marker" size={16} color="#64748b" />
-                  <Text style={styles.detailText}>{part.location}</Text>
-                </View>
-                <View style={styles.detailItem}>
-                  <MaterialCommunityIcons name="package-variant" size={16} color="#64748b" />
-                  <Text style={styles.detailText}>Stock: {part.stock}</Text>
-                </View>
-              </View>
-
-              <View style={styles.resultActions}>
-                <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: '#eff6ff' }]}
-                  onPress={() => navigation.navigate('PartsManagement')}
-                >
-                  <MaterialCommunityIcons name="pencil" size={20} color="#2563eb" />
-                  <Text style={[styles.actionButtonText, { color: '#2563eb' }]}>Editar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.actionButton, { backgroundColor: '#f0fdf4' }]}
-                  onPress={() => navigation.navigate('Transfer')}
-                >
-                  <MaterialCommunityIcons name="transfer" size={20} color="#22c55e" />
-                  <Text style={[styles.actionButtonText, { color: '#22c55e' }]}>Trasladar</Text>
-                </TouchableOpacity>
-              </View>
             </View>
-          );
-        })}
-        {filteredParts.length === 0 && (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="file-search" size={48} color="#94a3b8" />
-            <Text style={styles.emptyStateText}>No se encontraron resultados</Text>
-            <Text style={styles.emptyStateSubtext}>Intenta con otros términos de búsqueda</Text>
           </View>
         )}
-      </ScrollView>
+        ListEmptyComponent={
+          <Text style={{ textAlign: 'center', color: '#6c757d', marginTop: 40 }}>
+            No hay refacciones disponibles.
+          </Text>
+        }
+      />
     </View>
   );
 }
@@ -270,200 +187,141 @@ export default function SearchScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f8f9fa',
+    padding: 20,
   },
   header: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginRight: 10,
   },
   backButtonText: {
-    marginLeft: 8,
+    color: '#007bff',
     fontSize: 16,
-    color: '#64748b',
+    marginLeft: 5,
+    fontWeight: 'bold',
   },
-  headerTitle: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
+    color: '#212529',
+    flex: 1,
   },
   searchContainer: {
-    padding: 15,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    height: 50,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
     marginLeft: 10,
     fontSize: 16,
-    color: '#1e293b',
+    color: '#495057',
   },
-  filterButton: {
-    padding: 5,
-  },
-  filtersContainer: {
-    padding: 15,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-  },
-  filterTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748b',
-    marginBottom: 10,
-  },
-  categoriesContainer: {
-    flexDirection: 'row',
-    marginBottom: 15,
-  },
-  categoryChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-    marginRight: 8,
-  },
-  categoryChipSelected: {
-    backgroundColor: '#2563eb',
-  },
-  categoryChipText: {
-    color: '#64748b',
-    fontSize: 14,
-  },
-  categoryChipTextSelected: {
-    color: '#ffffff',
-  },
-  stockFilterContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  stockFilterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: '#f1f5f9',
-  },
-  stockFilterChipSelected: {
-    backgroundColor: '#2563eb',
-  },
-  stockFilterChipText: {
-    color: '#64748b',
-    fontSize: 14,
-  },
-  stockFilterChipTextSelected: {
-    color: '#ffffff',
-  },
-  resultsList: {
-    flex: 1,
-    padding: 15,
-  },
-  resultCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  resultHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
-  },
-  resultCode: {
-    fontSize: 14,
-    color: '#64748b',
-  },
-  resultName: {
+  sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1e293b',
-    marginTop: 2,
+    color: '#212529',
+    marginBottom: 10,
   },
-  stockBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  stockBadgeText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  resultDescription: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 12,
-  },
-  resultDetails: {
+  filterContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 12,
-    marginBottom: 12,
+    marginBottom: 20,
   },
-  detailItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  detailText: {
-    marginLeft: 4,
-    fontSize: 14,
-    color: '#64748b',
-  },
-  resultActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    paddingTop: 12,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+  filterButton: {
+    padding: 10,
     borderRadius: 8,
+    backgroundColor: '#e9ecef',
+    marginRight: 10,
+    marginBottom: 10,
   },
-  actionButtonText: {
-    marginLeft: 4,
+  activeFilterButton: {
+    backgroundColor: '#007bff',
+  },
+  filterText: {
     fontSize: 14,
-    fontWeight: '500',
+    color: '#495057',
   },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
+  activeFilterText: {
+    color: '#ffffff',
   },
-  emptyStateText: {
+  partCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
+  },
+  partCode: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#007bff',
+  },
+  partName: {
     fontSize: 16,
-    fontWeight: '500',
-    color: '#64748b',
-    marginTop: 16,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginTop: 5,
   },
-  emptyStateSubtext: {
+  partDescription: {
     fontSize: 14,
-    color: '#94a3b8',
-    marginTop: 4,
+    color: '#6c757d',
+    marginBottom: 10,
+  },
+  partDetails: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  partDetail: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginRight: 10,
+  },
+  actionsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  editButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007bff',
+    padding: 10,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 10,
+    justifyContent: 'center',
+  },
+  transferButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007bff',
+    padding: 10,
+    borderRadius: 8,
+    flex: 1,
+    justifyContent: 'center',
+  },
+  actionText: {
+    fontSize: 14,
+    color: '#ffffff',
+    marginLeft: 5,
   },
 });

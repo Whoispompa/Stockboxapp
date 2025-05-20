@@ -1,216 +1,214 @@
-import React, { useState, useEffect } from "react"; // Añade useEffect aquí
+import React, { useState, useEffect } from 'react';
+import { addMovement } from "../utils/movementUtils";
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
-  Platform,
-  ActivityIndicator,
-  RefreshControl, // Añade este import
-   Alert, // ¡Añade esto!
-} from "react-native";
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { toast } from "sonner-native";
-
-const API_BASE_URL = "http://193.203.165.112:4000/api/product";
-const PRODUCTS_ENDPOINT = `${API_BASE_URL}/all`;
-const CATEGORY_API_URL = "http://193.203.165.112:4000/api/category";
-
-const warehouses = [
-  { id: 1, name: "Almacén A" },
-  { id: 2, name: "Almacén B" },
-];
-
-const initialFormState = {
-  id: null,
-  sku: "",
-  name: "",
-  description: "",
-  quantity: "",
-  warehouseId: "", // No hay valor por defecto
-  categoryId: "", // No hay valor por defecto
-};
+  FlatList,
+  Modal,
+  Alert,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Slider from '@react-native-community/slider';
+import { Picker } from '@react-native-picker/picker';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export default function PartsManagementScreen({ navigation }) {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
   const [parts, setParts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [formData, setFormData] = useState(initialFormState);
-  const [errors, setErrors] = useState({});
-  const [isEditing, setIsEditing] = useState(false);
-  const [showForm, setShowForm] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [warehouses, setWarehouses] = useState([]);
+  const [newPart, setNewPart] = useState({
+    sku: '',
+    name: '',
+    description: '',
+    categoryId: null,
+    quantity: 0,
+    warehouseId: null,
+  });
+  const [selectedPart, setSelectedPart] = useState(null);
+  const [additionalStock, setAdditionalStock] = useState(0);
+  
 
-  // Cargar datos iniciales
-  const loadInitialData = async () => {
-    try {
-      // Cargar categorías
-      const categoriesResponse = await fetch(CATEGORY_API_URL);
-      const categoriesData = await categoriesResponse.json();
-      setCategories(categoriesData);
-
-      // Cargar productos
-      await fetchProducts();
-    } catch (error) {
-      console.error("Error loading initial data:", error);
-      Alert.alert("Error", "No se pudieron cargar los datos iniciales");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Obtener productos
-  const fetchProducts = async () => {
-    try {
-      setRefreshing(true);
-      const response = await fetch(PRODUCTS_ENDPOINT);
-
-      if (!response.ok) {
-        throw new Error(`Error ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      const transformedData = data.map((item) => ({
-        id: item.id,
-        sku: item.sku,
-        name: item.name,
-        description: item.description,
-        quantity: item.stock?.quantity || 0,
-        warehouseName:
-          warehouses.find((w) => w.id === item.stock?.warehouseId)?.name ||
-          "Almacén no asignado",
-        warehouseId: item.stock?.warehouseId,
-        categoryName:
-          categories.find((c) => c.id === item.categoryId)?.name ||
-          "Sin categoría",
-        categoryId: item.categoryId,
-      }));
-
-      setParts(transformedData);
-    } catch (error) {
-      console.error("Error fetching products:", error);
-      Alert.alert("Error", "No se pudieron cargar los productos");
-    } finally {
-      setRefreshing(false);
-    }
-  };
-
+  // Cargar almacenes al montar el componente
   useEffect(() => {
-    loadInitialData();
+    const fetchWarehouses = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        const response = await axios.get(
+          'http://193.203.165.112:4000/api/warehouse/all',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setWarehouses(response.data);
+        if (response.data.length > 0) {
+          setNewPart((prev) => ({
+            ...prev,
+            warehouseId: response.data[0].id,
+          }));
+        }
+      } catch (error) {
+        Alert.alert('Error', 'No se pudieron cargar los almacenes');
+      }
+    };
+    fetchWarehouses();
   }, []);
 
-  // Validación del formulario
-  const validateForm = () => {
-    const newErrors = {};
-    if (!formData.sku) newErrors.sku = "El SKU es requerido";
-    if (!formData.name) newErrors.name = "El nombre es requerido";
-    if (!formData.quantity) newErrors.quantity = "La cantidad es requerida";
-    if (isNaN(formData.quantity)) newErrors.quantity = "Debe ser un número";
-    if (!formData.warehouseId) newErrors.warehouseId = "Seleccione un almacén";
-    if (!formData.categoryId) newErrors.categoryId = "Seleccione una categoría";
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  // Enviar formulario
-  const handleSubmit = async () => {
-    if (!validateForm()) return;
-
-    try {
-      const productData = {
-        sku: formData.sku,
-        name: formData.name,
-        description: formData.description,
-        categoryId: formData.categoryId,
-        stock: {
-          warehouseId: formData.warehouseId,
-          quantity: parseInt(formData.quantity, 10),
-        },
-      };
-
-      const url = isEditing
-        ? `${API_BASE_URL}/update/${formData.id}`
-        : `${API_BASE_URL}/create`;
-
-      const response = await fetch(url, {
-        method: isEditing ? "PUT" : "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(productData),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Error en la operación");
+  // Cargar categorías al montar el componente
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        const response = await axios.get(
+          'http://193.203.165.112:4000/api/category',
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        setCategories(response.data);
+        if (response.data.length > 0) {
+          setNewPart((prev) => ({
+            ...prev,
+            categoryId: response.data[0].id,
+          }));
+        }
+      } catch (error) {
+        Alert.alert('Error', 'No se pudieron cargar las categorías');
       }
+    };
+    fetchCategories();
+  }, []);
 
-      Alert.alert(
-        "Éxito",
-        isEditing ? "Producto actualizado" : "Producto creado"
+  // Cargar productos al montar el componente
+  useEffect(() => {
+    fetchParts();
+  }, []);
+
+  // Función para cargar productos
+  const fetchParts = async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      const response = await axios.get(
+        'http://193.203.165.112:4000/api/product/all',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
       );
-      await fetchProducts();
-      resetForm();
+      setParts(response.data);
     } catch (error) {
-      console.error("Submission error:", error);
-      Alert.alert("Error", error.message);
+      Alert.alert('Error', 'No se pudo cargar el stock de productos');
     }
   };
 
-  // Editar producto
-  const handleEdit = (product) => {
-    setFormData({
-      id: product.id,
-      sku: product.sku,
-      name: product.name,
-      description: product.description,
-      quantity: product.quantity.toString(),
-      warehouseId: product.warehouseId,
-      categoryId: product.categoryId,
-    });
-    setIsEditing(true);
-    setShowForm(true);
-  };
-
-  // Eliminar producto
-  const handleDelete = async (id) => {
+  // Crear producto
+  const handleAddPart = async () => {
+    if (!newPart.sku.trim() || !newPart.name.trim()) {
+      Alert.alert('Error', 'Por favor, completa los campos obligatorios: SKU y Nombre.');
+      return;
+    }
     try {
-      const response = await fetch(`${API_BASE_URL}/${id}`, {
-        method: "DELETE",
+      const token = await AsyncStorage.getItem('authToken');
+      await axios.post(
+        'http://193.203.165.112:4000/api/product/create',
+        {
+          sku: newPart.sku,
+          name: newPart.name,
+          description: newPart.description,
+          categoryId: Number(newPart.categoryId),
+          quantity: Number(newPart.quantity),
+          warehouseId: Number(newPart.warehouseId),
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      Alert.alert('Éxito', 'Producto creado exitosamente');
+      
+      await fetchParts();
+      setNewPart({
+        sku: '',
+        name: '',
+        description: '',
+        categoryId: categories.length > 0 ? categories[0].id : null,
+        quantity: 0,
+        warehouseId: warehouses.length > 0 ? warehouses[0].id : null,
+        
       });
+      setModalVisible(false);
 
-      if (!response.ok) {
-        throw new Error("Error al eliminar el producto");
-      }
-
-      Alert.alert("Éxito", "Producto eliminado correctamente");
-      await fetchProducts();
+      
+      // Agrega movimiento de refacción
+      await addMovement({
+        id: Date.now(),
+        type: "refaccion",
+        item: `Refacción: ${newPart.name}`,
+        quantity: Number(newPart.quantity),
+        date: new Date().toLocaleString(),
+      });
     } catch (error) {
-      console.error("Delete error:", error);
-      Alert.alert("Error", error.message);
+      Alert.alert('Error', 'Error al crear el producto');
     }
   };
 
-  // Resetear formulario
-  const resetForm = () => {
-    setFormData(initialFormState);
-    setIsEditing(false);
-    setShowForm(false);
-    setErrors({});
+  // Actualizar stock
+  const handleEditPart = async () => {
+    if (selectedPart) {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        await axios.patch(
+          `http://193.203.165.112:4000/api/product/update/${selectedPart.id}`,
+          {
+            quantity: selectedPart.quantity + additionalStock,
+            warehouseId: selectedPart.warehouseId,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        Alert.alert('Éxito', 'Stock actualizado exitosamente');
+        await fetchParts();
+        setEditModalVisible(false);
+        setAdditionalStock(0);
+
+        
+        // Agrega movimiento de actualización de stock
+        await addMovement({
+          id: Date.now(),
+          type: "stock",
+          item: `Stock actualizado: ${selectedPart.name}`,
+          quantity: Number(additionalStock),
+          date: new Date().toLocaleString(),
+        });
+      } catch (error) {
+        Alert.alert('Error', 'Error al actualizar el stock');
+      }
+    }
   };
 
-  if (loading) {
+  // Obtener nombre del almacén
+  const getWarehouseName = (item) => {
+    if (item.warehouseName) return item.warehouseName;
     return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color="#2563eb" />
-      </View>
+      warehouses.find((w) => Number(w.id) === Number(item.warehouseId))?.name ||
+      'Desconocido'
     );
-  }
+  };
 
   return (
     <View style={styles.container}>
@@ -218,484 +216,376 @@ export default function PartsManagementScreen({ navigation }) {
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.backButton}
-          onPress={() => navigation.navigate("Home")}
+          onPress={() => navigation.navigate('Home')}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#64748b" />
-          <Text style={styles.backButtonText}>Dashboard</Text>
+          <Ionicons name="arrow-back" size={24} color="#007bff" />
+          <Text style={styles.backButtonText}>Menú</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Gestión de Inventario</Text>
-      </View>
-
-      <ScrollView
-        style={styles.content}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={fetchProducts}
-            colors={["#2563eb"]}
-          />
-        }
-      >
-        {/* Botón para mostrar/ocultar formulario */}
+        <Text style={styles.title}>Gestión de Productos</Text>
         <TouchableOpacity
           style={styles.addButton}
-          onPress={() => setShowForm(!showForm)}
+          onPress={() => setModalVisible(true)}
         >
-          <LinearGradient
-            colors={["#2563eb", "#1d4ed8"]}
-            style={styles.gradientButton}
-          >
-            <MaterialCommunityIcons
-              name={showForm ? "minus" : "plus"}
-              size={24}
-              color="white"
-            />
-            <Text style={styles.addButtonText}>
-              {showForm ? "Cancelar" : "Nuevo Producto"}
-            </Text>
-          </LinearGradient>
+          <Ionicons name="add-circle-outline" size={20} color="#ffffff" />
+          <Text style={styles.addButtonText}>Nuevo Producto</Text>
         </TouchableOpacity>
+      </View>
 
-        {/* Formulario */}
-        {showForm && (
-          <View style={styles.form}>
-            <Text style={styles.formTitle}>
-              {isEditing ? "Editar Producto" : "Nuevo Producto"}
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search-outline" size={20} color="#6c757d" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar productos..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
+      </View>
+
+      {/* Parts List */}
+      <FlatList
+        data={parts.filter((part) =>
+          part.name.toLowerCase().includes(searchQuery.toLowerCase())
+        )}
+        keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.partCard}>
+            <View style={styles.partHeader}>
+              <Text style={styles.partCode}>{item.sku}</Text>
+              <TouchableOpacity
+                style={styles.editButton}
+                onPress={() => {
+                  setSelectedPart(item);
+                  setEditModalVisible(true);
+                }}
+              >
+                <Ionicons name="create-outline" size={20} color="#007bff" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.partName}>{item.name}</Text>
+            <Text style={styles.partDescription}>{item.description}</Text>
+            <Text style={styles.partCategory}>
+              Categoría: {categories.find((c) => c.id === item.categoryId)?.name}
             </Text>
-
-            {/* Campos del formulario */}
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>SKU*</Text>
-              <TextInput
-                style={[styles.input, errors.sku && styles.inputError]}
-                value={formData.sku}
-                onChangeText={(text) => setFormData({ ...formData, sku: text })}
-                placeholder="SKU*"
-                editable={!isEditing}
-              />
-              {errors.sku && <Text style={styles.errorText}>{errors.sku}</Text>}
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Nombre*</Text>
-              <TextInput
-                style={[styles.input, errors.name && styles.inputError]}
-                value={formData.name}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, name: text })
-                }
-                placeholder="Nombre del producto"
-              />
-              {errors.name && (
-                <Text style={styles.errorText}>{errors.name}</Text>
-              )}
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Descripción</Text>
-              <TextInput
-                style={styles.input}
-                value={formData.description}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, description: text })
-                }
-                placeholder="Descripción detallada"
-                multiline
-              />
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Cantidad*</Text>
-              <TextInput
-                style={[styles.input, errors.quantity && styles.inputError]}
-                value={formData.quantity}
-                onChangeText={(text) =>
-                  setFormData({ ...formData, quantity: text })
-                }
-                keyboardType="numeric"
-                placeholder="Cantidad en stock"
-              />
-              {errors.quantity && (
-                <Text style={styles.errorText}>{errors.quantity}</Text>
-              )}
-            </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Almacén*</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdown,
-                  errors.warehouseId && styles.inputError,
-                ]}
-                onPress={() => {
-                  Alert.alert(
-                    "Seleccionar Almacén",
-                    null, // Cambiar el segundo argumento a null o un mensaje
-                    warehouses.map((warehouse) => ({
-                      text: warehouse.name,
-                      onPress: () => {
-                        setFormData({ ...formData, warehouseId: warehouse.id });
-                        setErrors({ ...errors, warehouseId: null });
-                      },
-                    }))
-                  );
-                }}
-              >
-                <Text
-                  style={[
-                    styles.dropdownText,
-                    !formData.warehouseId && styles.placeholderText,
-                  ]}
-                >
-                  {formData.warehouseId
-                    ? warehouses.find((w) => w.id === formData.warehouseId).name
-                    : "Seleccionar almacén"}
-                </Text>
-                <MaterialCommunityIcons
-                  name="chevron-down"
-                  size={24}
-                  color="#64748b"
+            <View style={styles.partFooter}>
+              <Text style={styles.partLocation}>
+                <Ionicons name="location-outline" size={16} />{' '}
+                Almacenado en: {getWarehouseName(item)}
+              </Text>
+              <Text style={styles.partStock}>
+                Stock: {item.quantity}{' '}
+                <Ionicons
+                  name={item.quantity > 0 ? 'arrow-down-circle-outline' : 'arrow-up-circle-outline'}
+                  size={16}
+                  color={item.quantity > 0 ? 'green' : 'red'}
                 />
-              </TouchableOpacity>
-              {errors.warehouseId && (
-                <Text style={styles.errorText}>{errors.warehouseId}</Text>
-              )}
+              </Text>
             </View>
-
-            <View style={styles.formGroup}>
-              <Text style={styles.label}>Categoría*</Text>
-              <TouchableOpacity
-                style={[
-                  styles.dropdown,
-                  errors.categoryId && styles.inputError,
-                ]}
-                onPress={() => {
-                  Alert.alert(
-                    "Seleccionar Categoría",
-                    null,
-                    categories.map((category) => ({
-                      text: category.name,
-                      onPress: () => {
-                        setFormData({ ...formData, categoryId: category.id });
-                        setErrors({ ...errors, categoryId: null });
-                      },
-                    }))
-                  );
-                }}
-              >
-                <Text
-                  style={[
-                    styles.dropdownText,
-                    !formData.categoryId && styles.placeholderText,
-                  ]}
-                >
-                  {formData.categoryId
-                    ? categories.find((c) => c.id === formData.categoryId).name
-                    : "Seleccionar categoría"}
-                </Text>
-                <MaterialCommunityIcons
-                  name="chevron-down"
-                  size={24}
-                  color="#64748b"
-                />
-              </TouchableOpacity>
-              {errors.categoryId && (
-                <Text style={styles.errorText}>{errors.categoryId}</Text>
-              )}
-            </View>
-
-            <TouchableOpacity
-              style={styles.submitButton}
-              onPress={handleSubmit}
-            >
-              <LinearGradient
-                colors={["#2563eb", "#1d4ed8"]}
-                style={styles.gradientButton}
-              >
-                <Text style={styles.submitButtonText}>
-                  {isEditing ? "Actualizar" : "Guardar"}
-                </Text>
-              </LinearGradient>
-            </TouchableOpacity>
           </View>
         )}
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>No hay productos disponibles.</Text>
+        }
+      />
 
-        {/* Lista de Productos */}
-        <View style={styles.listContainer}>
-          <Text style={styles.listTitle}>Inventario de Productos</Text>
-
-          {parts.length === 0 ? (
-            <Text style={styles.emptyText}>No hay productos registrados</Text>
-          ) : (
-            parts.map((product) => (
-              <View
-                key={`${product.id}-${product.warehouseId}`}
-                style={styles.partItem}
-              >
-                <View style={styles.partHeader}>
-                  <View>
-                    <Text style={styles.partCode}>{product.sku}</Text>
-                    <Text style={styles.partName}>{product.name}</Text>
-                    <Text style={styles.partCategory}>
-                      {product.categoryName}
-                    </Text>
-                  </View>
-                  <View style={styles.stockIndicator}>
-                    <Text style={styles.stockText}>
-                      Stock: {product.quantity}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.partDetails}>
-                  <Text style={styles.partDescription}>
-                    {product.description}
-                  </Text>
-                  <Text style={styles.partLocation}>
-                    Almacén: {product.warehouseName}
-                  </Text>
-                </View>
-
-                <View style={styles.partActions}>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.editButton]}
-                    onPress={() => handleEdit(product)}
-                  >
-                    <MaterialCommunityIcons
-                      name="pencil"
-                      size={20}
-                      color="#2563eb"
-                    />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.actionButton, styles.deleteButton]}
-                    onPress={() => handleDelete(product.id)}
-                  >
-                    <MaterialCommunityIcons
-                      name="delete"
-                      size={20}
-                      color="#ef4444"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            ))
-          )}
+      {/* Add Part Modal */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Nuevo Producto</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="SKU *"
+              value={newPart.sku}
+              onChangeText={(text) => setNewPart({ ...newPart, sku: text })}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre *"
+              value={newPart.name}
+              onChangeText={(text) => setNewPart({ ...newPart, name: text })}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Descripción"
+              value={newPart.description}
+              onChangeText={(text) =>
+                setNewPart({ ...newPart, description: text })
+              }
+            />
+            <Text style={styles.label}>Categoría</Text>
+            <Picker
+              selectedValue={newPart.categoryId}
+              onValueChange={(itemValue) =>
+                setNewPart({ ...newPart, categoryId: Number(itemValue) })
+              }
+              style={styles.picker}
+            >
+              {categories.map((cat) => (
+                <Picker.Item key={cat.id} label={cat.name} value={cat.id} />
+              ))}
+            </Picker>
+            <Text style={styles.label}>Almacén</Text>
+            <Picker
+              selectedValue={newPart.warehouseId}
+              onValueChange={(itemValue) =>
+                setNewPart({ ...newPart, warehouseId: itemValue })
+              }
+              style={styles.picker}
+            >
+              {warehouses.map((w) => (
+                <Picker.Item key={w.id} label={w.name} value={w.id} />
+              ))}
+            </Picker>
+            <Text style={styles.label}>Stock Inicial: {newPart.quantity}</Text>
+            <Slider
+              style={styles.slider}
+              minimumValue={0}
+              maximumValue={100}
+              step={1}
+              value={newPart.quantity}
+              onValueChange={(value) =>
+                setNewPart({ ...newPart, quantity: Math.round(value) })
+              }
+              minimumTrackTintColor="#007bff"
+              maximumTrackTintColor="#dee2e6"
+              thumbTintColor="#007bff"
+            />
+            <TouchableOpacity style={styles.saveButton} onPress={handleAddPart}>
+              <Text style={styles.saveButtonText}>Guardar Producto</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Ionicons name="close-outline" size={24} color="#6c757d" />
+            </TouchableOpacity>
+          </View>
         </View>
-      </ScrollView>
+      </Modal>
+
+      {/* Edit Part Modal */}
+      {selectedPart && (
+        <Modal visible={editModalVisible} animationType="slide" transparent={true}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Actualizar Stock</Text>
+              <Text style={styles.label}>
+                Stock Actual: {selectedPart.quantity}
+              </Text>
+              <Text style={styles.label}>
+                Stock Adicional: {additionalStock}
+              </Text>
+              <Slider
+                style={styles.slider}
+                minimumValue={0}
+                maximumValue={100}
+                step={1}
+                value={additionalStock}
+                onValueChange={(value) => setAdditionalStock(Math.round(value))}
+                minimumTrackTintColor="#007bff"
+                maximumTrackTintColor="#dee2e6"
+                thumbTintColor="#007bff"
+              />
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleEditPart}
+              >
+                <Text style={styles.saveButtonText}>Guardar Cambios</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setAdditionalStock(0);
+                }}
+              >
+                <Ionicons name="close-outline" size={24} color="#6c757d" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  // ... (mantener los estilos existentes)
-  dropdown: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "transparent",
-  },
-  dropdownSelected: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-  },
-  dropdownText: {
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  placeholderText: {
-    color: "#94a3b8",
-  },
-  slider: {
-    width: "100%",
-    height: 40,
-  },
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: '#f8f9fa',
+    padding: 20,
   },
   header: {
-    backgroundColor: "#ffffff",
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   backButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 10,
   },
   backButtonText: {
-    marginLeft: 8,
+    color: '#007bff',
     fontSize: 16,
-    color: "#64748b",
+    marginLeft: 5,
+    fontWeight: 'bold',
   },
-  headerTitle: {
+  title: {
     fontSize: 24,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  content: {
-    flex: 1,
-    padding: 20,
+    fontWeight: 'bold',
+    color: '#212529',
   },
   addButton: {
-    marginBottom: 20,
-  },
-  gradientButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 15,
-    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#007bff',
+    paddingVertical: 10,
+    paddingHorizontal: 15,
+    borderRadius: 8,
   },
   addButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
-    marginLeft: 8,
-  },
-  form: {
-    backgroundColor: "#ffffff",
-    padding: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 20,
-  },
-  formGroup: {
-    marginBottom: 15,
-  },
-  row: {
-    flexDirection: "row",
-    marginBottom: 15,
-  },
-  label: {
+    color: '#ffffff',
     fontSize: 14,
-    color: "#64748b",
-    marginBottom: 5,
+    fontWeight: 'bold',
+    marginLeft: 5,
   },
-  input: {
-    backgroundColor: "#f1f5f9",
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-    color: "#1e293b",
-  },
-  inputError: {
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: "#ef4444",
-  },
-  errorText: {
-    color: "#ef4444",
-    fontSize: 12,
-    marginTop: 5,
-  },
-  submitButton: {
-    marginTop: 20,
-  },
-  submitButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  listContainer: {
-    marginTop: 20,
-  },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     marginBottom: 15,
+    backgroundColor: '#ffffff',
   },
-  partItem: {
-    backgroundColor: "#ffffff",
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#495057',
+    marginLeft: 10,
+  },
+  partCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
     padding: 15,
-    borderRadius: 12,
     marginBottom: 10,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
   },
   partHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 10,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   partCode: {
     fontSize: 14,
-    color: "#64748b",
+    fontWeight: 'bold',
+    color: '#212529',
+  },
+  editButton: {
+    padding: 5,
   },
   partName: {
     fontSize: 16,
-    fontWeight: "500",
-    color: "#1e293b",
-  },
-  stockIndicator: {
-    backgroundColor: "#f1f5f9",
-    padding: 6,
-    borderRadius: 6,
-  },
-  stockText: {
-    fontSize: 14,
-    color: "#64748b",
-  },
-  stockLow: {
-    color: "#ef4444",
-  },
-  stockHigh: {
-    color: "#22c55e",
-  },
-  partDetails: {
-    marginBottom: 10,
+    fontWeight: 'bold',
+    color: '#007bff',
+    marginTop: 5,
   },
   partDescription: {
     fontSize: 14,
-    color: "#64748b",
-    marginBottom: 5,
+    color: '#495057',
+    marginTop: 5,
+  },
+  partCategory: {
+    fontSize: 14,
+    color: '#6c757d',
+    marginTop: 5,
+  },
+  partFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
   },
   partLocation: {
     fontSize: 14,
-    color: "#64748b",
+    color: '#6c757d',
   },
-  partActions: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    borderTopWidth: 1,
-    borderTopColor: "#e2e8f0",
-    paddingTop: 10,
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 8,
-    marginLeft: 10,
-  },
-  editButton: {
-    backgroundColor: "#dbeafe",
-  },
-  deleteButton: {
-    backgroundColor: "#fee2e2",
+  partStock: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#212529',
   },
   emptyText: {
-    textAlign: "center",
-    color: "#64748b",
+    textAlign: 'center',
     fontSize: 16,
+    color: '#6c757d',
     marginTop: 20,
+  },
+  modalContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 20,
+    width: '90%',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#212529',
+    marginBottom: 20,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 15,
+    fontSize: 14,
+    color: '#495057',
+  },
+  label: {
+    fontSize: 14,
+    color: '#495057',
+    marginBottom: 5,
+  },
+  slider: {
+    width: '100%',
+    height: 40,
+    marginBottom: 15,
+  },
+  picker: {
+    height: 50,
+    width: '100%',
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+  },
+  saveButton: {
+    backgroundColor: '#007bff',
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  saveButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  closeButton: {
+    alignSelf: 'center',
+    marginTop: 10,
   },
 });

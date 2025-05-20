@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { addMovement } from "../utils/movementUtils"; // Ajusta la ruta según tu estructura
 import {
   View,
   Text,
@@ -9,211 +10,213 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  FlatList,
 } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import { toast } from "sonner-native";
+import Slider from "@react-native-community/slider";
+import { Picker } from "@react-native-picker/picker";
 import axios from "axios";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const API_BASE_URL = "http://193.203.165.112:4000/api";
-const TOKEN =  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiaWF0IjoxNzQ3MTIxMTQ5LCJleHAiOjE3NDcxMjQ3NDl9.cvUrafUQPhivmmWtAvSCTo6veKOaTaNAiIajJTmR2nI"
-
-// Configurar Axios con el token
-axios.defaults.baseURL = API_BASE_URL;
-axios.defaults.headers.common["Authorization"] = `Bearer ${TOKEN}`;
 
 export default function TransferScreen({ navigation }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedPart, setSelectedPart] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
-  const [sourceWarehouse, setSourceWarehouse] = useState(null);
-  const [targetWarehouse, setTargetWarehouse] = useState(null);
-  const [quantity, setQuantity] = useState("");
-  const [notes, setNotes] = useState("");
+  const [toWarehouse, setToWarehouse] = useState(null);
+  const [quantity, setQuantity] = useState(0);
+  const [approver, setApprover] = useState(1);
+  const [warehouses, setWarehouses] = useState([]);
+  const [parts, setParts] = useState([]);
   const [pendingTransfers, setPendingTransfers] = useState([]);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [selectedTransfer, setSelectedTransfer] = useState(null);
   const [authCode, setAuthCode] = useState("");
-  const [warehouses, setWarehouses] = useState([]);
-  const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [transferring, setTransferring] = useState(false);
-
-  // Simular códigos de autorización válidos
-  const validAuthCodes = {
-    ADMIN123: "admin",
-    SUPER456: "supervisor",
-  };
 
   useEffect(() => {
     fetchData();
   }, []);
 
+  const getToken = async () => {
+    return await AsyncStorage.getItem("authToken");
+  };
+
   const fetchData = async () => {
     try {
       setLoading(true);
-      // Obtener almacenes y productos
+      const token = await getToken();
+      // Obtener transferencias, almacenes y productos
       const [transfersRes, warehousesRes, productsRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/stock/all-transfer`),
-        axios.get(`${API_BASE_URL}/warehouse/all`),
-        axios.get(`${API_BASE_URL}/product/all`),
+        axios.get(`${API_BASE_URL}/stock/all-transfer`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${API_BASE_URL}/warehouse/all`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        axios.get(`${API_BASE_URL}/product/all`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
       ]);
-
       setPendingTransfers(transfersRes.data);
       setWarehouses(warehousesRes.data);
-      setProducts(productsRes.data);
+      setParts(productsRes.data);
     } catch (error) {
-      console.error("Error fetching data:", error);
       Alert.alert("Error al cargar los datos");
     } finally {
       setLoading(false);
     }
   };
 
-  const filteredParts = products.filter(
-    (part) =>
-      part.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      part.sku.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleOpenModal = (part) => {
+    setSelectedPart(part);
+    setQuantity(0);
+    // Selecciona el primer almacén diferente al actual como destino
+    const currentWarehouse = warehouses.find(
+      (w) => w.name === part.warehouseName
+    );
+    const destinos = warehouses.filter((w) => w.id !== currentWarehouse?.id);
+    setToWarehouse(destinos.length > 0 ? destinos[0].id : null);
+    setApprover(1);
+    setModalVisible(true);
+  };
 
-  const handleTransfer = async () => {
-    // Validaciones
-    if (!sourceWarehouse || !targetWarehouse) {
-      Alert.alert("Selecciona los almacenes de origen y destino");
+    const handleTransfer = async () => {
+    if (!selectedPart) return;
+    if (!quantity || isNaN(quantity) || Number(quantity) <= 0) {
+      Alert.alert("Error", "Selecciona una cantidad válida.");
       return;
     }
-
-    if (sourceWarehouse === targetWarehouse) {
-      Alert.alert("Los almacenes deben ser diferentes");
+    if (!toWarehouse) {
+      Alert.alert("Error", "Selecciona un almacén destino.");
       return;
     }
-
-    const qty = parseFloat(quantity);
-    if (isNaN(qty) || qty <= 0) {
-      Alert.alert("Ingresa una cantidad válida");
+    if (selectedPart.quantity < Number(quantity)) {
+      Alert.alert("Error", "No hay suficiente stock disponible.");
+      return;
+    }
+    const fromWarehouseId = warehouses.find(
+      (w) => w.name === selectedPart.warehouseName
+    )?.id;
+    if (fromWarehouseId === toWarehouse) {
+      Alert.alert(
+        "Error",
+        "El almacén destino debe ser diferente al de origen."
+      );
+      return;
+    }
+  
+    try {
+      setTransferring(true);
+      const token = await getToken();
+      await axios.post(
+        `${API_BASE_URL}/stock/create-transfer`,
+        {
+          fromWarehouse: Number(fromWarehouseId),
+          toWarehouse: Number(toWarehouse),
+          userId: Number(approver),
+          notes: "",
+          details: [
+            {
+              stockId: Number(selectedPart.id),
+              quantity: Number(quantity),
+            },
+          ],
+        },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      // Recarga la lista de transferencias desde el backend
+      await fetchData();
+      setModalVisible(false);
+      setSelectedPart(null);
+      setQuantity(0);
+      setToWarehouse(null);
+      Alert.alert("Éxito", "Traslado realizado correctamente");
+      await addMovement({
+        id: Date.now(),
+        type: "traslado-pendiente",
+        item: selectedPart.name,
+        quantity: Number(quantity),
+        from: selectedPart.warehouseName,
+        to: warehouses.find(w => w.id === toWarehouse)?.name || "",
+        date: new Date().toLocaleString(),
+      });
+    } catch (error) {
+      Alert.alert("Error", "No se pudo realizar el traslado");
+    } finally {
+      setTransferring(false);
+    }
+  };
+  const handleAuthorization = async () => {
+    if (!selectedTransfer || !selectedTransfer.id) {
+      Alert.alert(
+        "Error",
+        "No se ha seleccionado una transferencia para autorizar"
+      );
       return;
     }
 
     try {
       setTransferring(true);
+      const token = await getToken();
 
-      // Crear la transferencia
-      const transferData = {
-        fromWarehouse: sourceWarehouse, // ID del almacén de origen
-        toWarehouse: targetWarehouse, // ID del almacén de destino
-        userId: 1, // ID del usuario (ajusta según corresponda)
-        notes: notes || "", // Notas opcionales
-        details: [
-          {
-            productId: selectedPart.id, // ID del producto
-            quantity: qty, // Cantidad a transferir
-          },
-        ],
-      };
-
-      console.log("Datos enviados:", transferData); // Depuración
-
-      // Llamada al endpoint para crear la transferencia
-      const response = await axios.post(
-        `${API_BASE_URL}/stock/create-transfer`,
-        transferData
+      const response = await axios.patch(
+        `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
       );
 
-      // Actualizar la lista de transferencias
-      setPendingTransfers([response.data, ...pendingTransfers]);
-      setModalVisible(false);
-      resetForm();
-      Alert.alert("Solicitud de traslado creada. Esperando autorización.");
+      const updatedData =
+        response.data &&
+        typeof response.data === "object" &&
+        !Array.isArray(response.data) &&
+        response.data.id
+          ? response.data
+          : null;
+
+      if (updatedData) {
+        setPendingTransfers((prevTransfers) =>
+          prevTransfers.map((transfer) =>
+            transfer.id === selectedTransfer.id
+              ? { ...transfer, ...updatedData }
+              : transfer
+          )
+        );
+      } else {
+        // Si la respuesta no es válida, recarga la lista
+        fetchData();
+      }
+
+      setAuthCode("");
+      setShowAuthModal(false);
+      setSelectedTransfer(null);
+
+      Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
     } catch (error) {
-      console.error(
-        "Error creating transfer:",
-        error.response?.data || error.message
-      );
       Alert.alert(
-        error.response?.data?.message || "Error al crear la transferencia"
+        "Error",
+        error.response?.data?.message ||
+          "Ocurrió un error inesperado al completar la transferencia"
       );
     } finally {
       setTransferring(false);
     }
   };
-
-        const handleAuthorization = async () => {
-      if (!selectedTransfer || !selectedTransfer.id) {
-        Alert.alert("Error", "No se ha seleccionado una transferencia para autorizar");
-        return;
-      }
-    
-      try {
-        // Mostrar indicador de carga
-        setTransferring(true);
-    
-        // Llamada al endpoint para completar la transferencia
-        const response = await axios.patch(
-          `${API_BASE_URL}/stock/complete-transfer/${selectedTransfer.id}`
-        );
-    
-        // Actualizar el estado local de las transferencias
-        setPendingTransfers((prevTransfers) =>
-          prevTransfers.map((transfer) =>
-            transfer.id === selectedTransfer.id
-              ? { ...transfer, ...response.data } // Actualizar con los datos devueltos por el servidor
-              : transfer
-          )
-        );
-    
-        // Restablecer el estado del modal y el código de autorización
-        setAuthCode("");
-        setShowAuthModal(false);
-        setSelectedTransfer(null);
-    
-        // Mostrar mensaje de éxito
-        Alert.alert("Éxito", "Traslado autorizado y completado exitosamente");
-      } catch (error) {
-        console.error(
-          "Error completing transfer:",
-          error.response?.data || error.message
-        );
-        Alert.alert(
-          "Error",
-          error.response?.data?.message ||
-            "Ocurrió un error inesperado al completar la transferencia"
-        );
-      } finally {
-        // Ocultar indicador de carga
-        setTransferring(false);
-      }
-    };
-
-  const resetForm = () => {
-    setSelectedPart(null);
-    setSourceWarehouse(null);
-    setTargetWarehouse(null);
-    setQuantity("");
-    setNotes("");
-  };
-
-  const getStockColor = (stock) => {
-    if (stock <= 2) return "#ef4444";
-    if (stock <= 5) return "#f59e0b";
-    return "#22c55e";
-  };
-
-  const getProductStock = (productId, warehouseId) => {
-    // Busca el producto por su ID
-    const product = products.find((p) => p.id === productId);
-
-    if (!product) {
-      return 0; // Si no se encuentra el producto, devuelve 0
-    }
-
-    // Verifica si el producto pertenece al almacén especificado
-    const warehouse = warehouses.find((w) => w.id === warehouseId);
-    if (!warehouse || product.warehouseName !== warehouse.name) {
-      return 0; // Si el almacén no coincide, devuelve 0
-    }
-
-    return product.quantity; // Devuelve la cantidad del producto en el almacén
-  };
+  const filteredParts = parts.filter(
+    (part) =>
+      part.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      part.sku?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   if (loading) {
     return (
@@ -232,15 +235,15 @@ export default function TransferScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.navigate("Home")}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#64748b" />
-          <Text style={styles.backButtonText}>Dashboard</Text>
+          <Ionicons name="arrow-back" size={24} color="#64748b" />
+          <Text style={styles.backButtonText}>Menú</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Traslado de Refacciones</Text>
       </View>
 
       {/* Barra de búsqueda */}
       <View style={styles.searchContainer}>
-        <MaterialCommunityIcons name="magnify" size={24} color="#64748b" />
+        <Ionicons name="search-outline" size={20} color="#6c757d" />
         <TextInput
           style={styles.searchInput}
           placeholder="Buscar por código o nombre..."
@@ -250,53 +253,127 @@ export default function TransferScreen({ navigation }) {
       </View>
 
       {/* Lista de refacciones */}
-      <ScrollView style={styles.partsList}>
-        {filteredParts.map((part) => (
-          <View key={part.id} style={styles.partCard}>
-            <View style={styles.partInfo}>
-              <Text style={styles.partCode}>{part.sku}</Text>
-              <Text style={styles.partName}>{part.name}</Text>
-              <View style={styles.stockContainer}>
-                {warehouses.map((warehouse) => (
-                  <View key={warehouse.id} style={styles.stockItem}>
-                    <Text style={styles.warehouseName}>{warehouse.name}:</Text>
-                    <Text
-                      style={[
-                        styles.stockValue,
-                        {
-                          color: getStockColor(
-                            getProductStock(part.id, warehouse.id)
-                          ),
-                        },
-                      ]}
-                    >
-                      {getProductStock(part.id, warehouse.id)}
-                    </Text>
-                  </View>
-                ))}
-              </View>
-            </View>
+      <FlatList
+        data={filteredParts}
+        keyExtractor={(item) => item.id?.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.partCard}>
+            <Text style={styles.partCode}>Código: {item.sku}</Text>
+            <Text style={styles.partName}>{item.name}</Text>
+            <Text style={styles.partDesc}>{item.description}</Text>
+            <Text style={styles.partStock}>Categoría: {item.categoryName}</Text>
+            <Text style={styles.partStock}>
+              Ubicación: {item.warehouseName}
+            </Text>
+            <Text style={styles.partStock}>Cantidad: {item.quantity}</Text>
             <TouchableOpacity
               style={styles.transferButton}
-              onPress={() => {
-                setSelectedPart(part);
-                setModalVisible(true);
-              }}
+              onPress={() => handleOpenModal(item)}
             >
-              <LinearGradient
-                colors={["#2563eb", "#1d4ed8"]}
-                style={styles.transferGradient}
-              >
-                <MaterialCommunityIcons
-                  name="transfer"
-                  size={24}
-                  color="#ffffff"
-                />
-              </LinearGradient>
+              <Ionicons
+                name="swap-horizontal-outline"
+                size={20}
+                color="#ffffff"
+              />
+              <Text style={styles.transferButtonText}>Trasladar</Text>
             </TouchableOpacity>
           </View>
-        ))}
-      </ScrollView>
+        )}
+        ListEmptyComponent={
+          <Text
+            style={{ textAlign: "center", color: "#6c757d", marginTop: 40 }}
+          >
+            No hay refacciones disponibles.
+          </Text>
+        }
+      />
+
+      {/* Transfer Modal */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
+        <View style={styles.modalContainer}>
+          <View style={styles.modalContent}>
+            <ScrollView>
+              <Text style={styles.modalTitle}>Realizar Traslado</Text>
+              {selectedPart && (
+                <>
+                  <Text style={styles.modalSubtitle}>
+                    Código: {selectedPart.sku}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Nombre: {selectedPart.name}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Descripción: {selectedPart.description}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Categoría: {selectedPart.categoryName}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Ubicación actual: {selectedPart.warehouseName}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>
+                    Cantidad disponible: {selectedPart.quantity}
+                  </Text>
+                  <Text style={styles.modalSubtitle}>Almacén destino</Text>
+                  <View style={{ marginBottom: 15 }}>
+                    <Picker
+                      selectedValue={toWarehouse}
+                      onValueChange={setToWarehouse}
+                      style={styles.picker}
+                    >
+                      {warehouses
+                        .filter((w) => w.name !== selectedPart.warehouseName)
+                        .map((w) => (
+                          <Picker.Item key={w.id} label={w.name} value={w.id} />
+                        ))}
+                    </Picker>
+                  </View>
+                  <Text style={styles.modalSubtitle}>
+                    Cantidad a trasladar: {quantity}
+                  </Text>
+                  <Slider
+                    style={{ width: "100%", height: 40, marginBottom: 15 }}
+                    minimumValue={0}
+                    maximumValue={selectedPart.quantity}
+                    step={1}
+                    value={quantity}
+                    onValueChange={setQuantity}
+                    minimumTrackTintColor="#007bff"
+                    maximumTrackTintColor="#dee2e6"
+                    thumbTintColor="#007bff"
+                    disabled={selectedPart.quantity === 0}
+                  />
+                  <Text style={styles.modalSubtitle}>Autoriza</Text>
+                  <View style={{ marginBottom: 15 }}>
+                    <Picker
+                      selectedValue={approver}
+                      onValueChange={setApprover}
+                      style={styles.picker}
+                    >
+                      <Picker.Item label="1" value={1} />
+                      <Picker.Item label="2" value={2} />
+                    </Picker>
+                  </View>
+                </>
+              )}
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleTransfer}
+                disabled={!quantity}
+              >
+                <Ionicons name="checkmark-outline" size={20} color="#fff" />
+                <Text style={styles.saveButtonText}>Confirmar Traslado</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setModalVisible(false)}
+              >
+                <Ionicons name="close-outline" size={24} color="#6c757d" />
+              </TouchableOpacity>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* Lista de transferencias pendientes */}
       {pendingTransfers.length > 0 && (
@@ -307,12 +384,21 @@ export default function TransferScreen({ navigation }) {
               <View key={transfer.id} style={styles.pendingCard}>
                 <View style={styles.pendingInfo}>
                   <Text style={styles.pendingPartName}>
-                    {transfer.details[0]?.product?.name ||
-                      "Producto no disponible"}
+                    {transfer.details && transfer.details.length > 0
+                      ? transfer.details[0]?.product?.name ||
+                        transfer.details[0]?.productName ||
+                        transfer.details[0]?.name ||
+                        transfer.details[0]?.sku ||
+                        `Stock ID: ${transfer.details[0]?.stockId ?? "N/A"}`
+                      : "Producto no disponible"}
                   </Text>
                   <Text style={styles.pendingDetails}>
-                    Cantidad: {transfer.details[0]?.quantity} • De:{" "}
-                    {transfer.from?.name} • A: {transfer.to?.name}
+                    Cantidad:{" "}
+                    {transfer.details && transfer.details.length > 0
+                      ? transfer.details[0]?.quantity
+                      : "N/A"}{" "}
+                    • De: {transfer.from?.name || transfer.fromWarehouseName} •
+                    A: {transfer.to?.name || transfer.toWarehouseName}
                   </Text>
                   <Text style={styles.pendingDate}>
                     {new Date(transfer.createdAt).toLocaleDateString()}
@@ -395,151 +481,6 @@ export default function TransferScreen({ navigation }) {
           </View>
         </View>
       </Modal>
-
-      {/* Modal de transferencia */}
-      <Modal
-        animationType="slide"
-        transparent={true}
-        visible={modalVisible}
-        onRequestClose={() => setModalVisible(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Realizar Traslado</Text>
-              <TouchableOpacity
-                onPress={() => setModalVisible(false)}
-                style={styles.closeButton}
-              >
-                <MaterialCommunityIcons
-                  name="close"
-                  size={24}
-                  color="#64748b"
-                />
-              </TouchableOpacity>
-            </View>
-
-            {selectedPart && (
-              <View style={styles.modalBody}>
-                <Text style={styles.selectedPartInfo}>
-                  {selectedPart.sku} - {selectedPart.name}
-                </Text>
-
-                {/* Selección de almacén origen */}
-                <Text style={styles.inputLabel}>Almacén Origen</Text>
-                <View style={styles.warehouseButtons}>
-                  {warehouses.map((warehouse) => (
-                    <TouchableOpacity
-                      key={warehouse.id}
-                      style={[
-                        styles.warehouseButton,
-                        sourceWarehouse === warehouse.id &&
-                          styles.warehouseButtonSelected,
-                      ]}
-                      onPress={() => setSourceWarehouse(warehouse.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.warehouseButtonText,
-                          sourceWarehouse === warehouse.id &&
-                            styles.warehouseButtonTextSelected,
-                        ]}
-                      >
-                        {warehouse.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.warehouseStock,
-                          sourceWarehouse === warehouse.id &&
-                            styles.warehouseButtonTextSelected,
-                        ]}
-                      >
-                        Stock: {getProductStock(selectedPart.id, warehouse.id)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Selección de almacén destino */}
-                <Text style={styles.inputLabel}>Almacén Destino</Text>
-                <View style={styles.warehouseButtons}>
-                  {warehouses.map((warehouse) => (
-                    <TouchableOpacity
-                      key={warehouse.id}
-                      style={[
-                        styles.warehouseButton,
-                        targetWarehouse === warehouse.id &&
-                          styles.warehouseButtonSelected,
-                      ]}
-                      onPress={() => setTargetWarehouse(warehouse.id)}
-                    >
-                      <Text
-                        style={[
-                          styles.warehouseButtonText,
-                          targetWarehouse === warehouse.id &&
-                            styles.warehouseButtonTextSelected,
-                        ]}
-                      >
-                        {warehouse.name}
-                      </Text>
-                      <Text
-                        style={[
-                          styles.warehouseStock,
-                          targetWarehouse === warehouse.id &&
-                            styles.warehouseButtonTextSelected,
-                        ]}
-                      >
-                        Stock: {getProductStock(selectedPart.id, warehouse.id)}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-
-                {/* Cantidad a transferir */}
-                <Text style={styles.inputLabel}>Cantidad</Text>
-                <TextInput
-                  style={styles.quantityInput}
-                  keyboardType="numeric"
-                  value={quantity}
-                  onChangeText={setQuantity}
-                  placeholder="Ingrese cantidad"
-                />
-
-                {/* Notas */}
-                <Text style={styles.inputLabel}>Notas (opcional)</Text>
-                <TextInput
-                  style={styles.notesInput}
-                  multiline
-                  numberOfLines={3}
-                  value={notes}
-                  onChangeText={setNotes}
-                  placeholder="Agregar notas adicionales..."
-                />
-
-                {/* Botón de transferencia */}
-                <TouchableOpacity
-                  style={styles.confirmButton}
-                  onPress={handleTransfer}
-                  disabled={transferring}
-                >
-                  <LinearGradient
-                    colors={["#2563eb", "#1d4ed8"]}
-                    style={styles.confirmGradient}
-                  >
-                    {transferring ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.confirmButtonText}>
-                        Realizar Traslado
-                      </Text>
-                    )}
-                  </LinearGradient>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </View>
-      </Modal>
     </View>
   );
 }
@@ -547,111 +488,149 @@ export default function TransferScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#f8f9fa",
+    padding: 20,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 16,
-    backgroundColor: "#ffffff",
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: "row",
     alignItems: "center",
-    marginRight: 16,
+    marginRight: 10,
   },
   backButtonText: {
     marginLeft: 8,
     color: "#64748b",
     fontSize: 16,
+    fontWeight: "bold",
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontWeight: "bold",
-    color: "#1e293b",
+    color: "#212529",
+    flex: 1,
   },
   searchContainer: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
     backgroundColor: "#ffffff",
-    margin: 16,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 20,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
-    marginLeft: 8,
-    color: "#1e293b",
-  },
-  partsList: {
-    flex: 1,
-    paddingHorizontal: 16,
+    marginLeft: 10,
+    fontSize: 16,
+    color: "#495057",
   },
   partCard: {
     backgroundColor: "#ffffff",
     borderRadius: 8,
-    padding: 16,
-    marginBottom: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    padding: 15,
+    marginBottom: 10,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-  },
-  partInfo: {
-    flex: 1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   partCode: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 4,
+    color: "#007bff",
   },
   partName: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 8,
-  },
-  stockContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-  },
-  stockItem: {
-    flexDirection: "row",
-    marginRight: 16,
-    marginBottom: 4,
-  },
-  warehouseName: {
-    fontSize: 12,
-    color: "#64748b",
-    marginRight: 4,
-  },
-  stockValue: {
-    fontSize: 12,
+    fontSize: 16,
     fontWeight: "bold",
+    color: "#212529",
+    marginBottom: 5,
+  },
+  partDesc: {
+    fontSize: 14,
+    color: "#6c757d",
+    marginBottom: 5,
+  },
+  partStock: {
+    fontSize: 14,
+    color: "#6c757d",
+    marginBottom: 2,
   },
   transferButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    overflow: "hidden",
+    backgroundColor: "#007bff",
+    padding: 10,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 10,
+    flexDirection: "row",
+    justifyContent: "center",
   },
-  transferGradient: {
+  transferButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  modalContainer: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.5)",
+  },
+  modalContent: {
+    backgroundColor: "#ffffff",
+    borderRadius: 8,
+    padding: 20,
+    width: "90%",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#212529",
+    marginBottom: 20,
+  },
+  modalSubtitle: {
+    fontSize: 15,
+    color: "#495057",
+    marginBottom: 8,
+  },
+  picker: {
+    height: 50,
+    width: "100%",
+    marginBottom: 15,
+    borderWidth: 1,
+    borderColor: "#dee2e6",
+    borderRadius: 8,
+    backgroundColor: "#f8f9fa",
+  },
+  saveButton: {
+    backgroundColor: "#007bff",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  saveButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "bold",
+    marginLeft: 8,
+  },
+  closeButton: {
+    alignSelf: "center",
+    marginTop: 10,
   },
   pendingTransfersContainer: {
     marginTop: 16,
-    paddingHorizontal: 16,
+    paddingHorizontal: 0,
   },
   pendingTitle: {
     fontSize: 16,
@@ -760,109 +739,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   authButtonText: {
-    color: "#ffffff",
-    fontWeight: "bold",
-  },
-  modalContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "rgba(0,0,0,0.5)",
-  },
-  modalContent: {
-    width: "90%",
-    maxHeight: "90%",
-    backgroundColor: "#ffffff",
-    borderRadius: 8,
-    overflow: "hidden",
-  },
-  modalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#1e293b",
-  },
-  closeButton: {
-    padding: 4,
-  },
-  modalBody: {
-    padding: 16,
-  },
-  selectedPartInfo: {
-    fontSize: 16,
-    fontWeight: "bold",
-    color: "#1e293b",
-    marginBottom: 16,
-  },
-  inputLabel: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 8,
-  },
-  warehouseButtons: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    marginBottom: 16,
-  },
-  warehouseButton: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 4,
-    padding: 8,
-    marginRight: 8,
-    marginBottom: 8,
-  },
-  warehouseButtonSelected: {
-    borderColor: "#2563eb",
-    backgroundColor: "#eff6ff",
-  },
-  warehouseButtonText: {
-    fontSize: 12,
-    color: "#64748b",
-  },
-  warehouseButtonTextSelected: {
-    color: "#2563eb",
-    fontWeight: "bold",
-  },
-  warehouseStock: {
-    fontSize: 10,
-    color: "#94a3b8",
-  },
-  quantityInput: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 4,
-    padding: 12,
-    marginBottom: 16,
-    color: "#1e293b",
-  },
-  notesInput: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 4,
-    padding: 12,
-    marginBottom: 16,
-    color: "#1e293b",
-    textAlignVertical: "top",
-  },
-  confirmButton: {
-    height: 48,
-    borderRadius: 4,
-    overflow: "hidden",
-  },
-  confirmGradient: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  confirmButtonText: {
     color: "#ffffff",
     fontWeight: "bold",
   },

@@ -1,17 +1,16 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { useFocusEffect } from "@react-navigation/native";
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
-  Dimensions,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import axios from "axios";
 
 const DashboardCard = ({ title, value, icon, color }) => (
   <View style={[styles.card, { borderLeftColor: color }]}>
@@ -36,11 +35,64 @@ const QuickActionButton = ({ title, icon, onPress, color }) => (
 );
 
 export default function HomeScreen({ navigation }) {
-  const recentMovements = [
-    { id: 1, type: 'entrada', item: 'Motor 3HP', quantity: 5, date: '23/02/2024' },
-    { id: 2, type: 'salida', item: 'Filtro Aire', quantity: 2, date: '23/02/2024' },
-    { id: 3, type: 'traslado', item: 'Bomba Hidráulica', quantity: 1, date: '22/02/2024' },
-  ];
+  const [recentMovements, setRecentMovements] = useState([]);
+  const [parts, setParts] = useState([]);
+  const [stockTotal, setStockTotal] = useState(0);
+
+  // Cargar movimientos cada vez que la pantalla toma foco
+  const loadMovements = async () => {
+    try {
+      const data = await AsyncStorage.getItem("recentMovements");
+      if (data) setRecentMovements(JSON.parse(data));
+      else setRecentMovements([]);
+    } catch (e) {
+      setRecentMovements([]);
+    }
+  };
+
+  // Cargar productos y calcular stock total
+  const [lowStockCount, setLowStockCount] = useState(0);
+  const loadParts = async () => {
+    try {
+      const token = await AsyncStorage.getItem("authToken");
+      const response = await axios.get(
+        "http://193.203.165.112:4000/api/product/all",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      setParts(response.data);
+
+      // Sumar todos los quantity
+      const total = response.data.reduce(
+        (sum, part) => sum + (part.quantity || 0),
+        0
+      );
+      setStockTotal(total);
+
+      // Contar productos con bajo stock (por ejemplo, <= 5)
+      const lowStock = response.data.filter(part => part.quantity <= 5).length;
+      setLowStockCount(lowStock);
+
+    } catch (e) {
+      setParts([]);
+      setStockTotal(0);
+      setLowStockCount(0);
+    }
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      loadMovements();
+      loadParts();
+    }, [])
+  );
+
+  // Función para cerrar sesión
+  const handleLogout = async () => {
+    await AsyncStorage.removeItem("authToken");
+    navigation.replace("Login");
+  };
 
   return (
     <ScrollView style={styles.dashboardContainer}>
@@ -48,16 +100,16 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <Text style={styles.welcomeText}>StockBox</Text>
-          <TouchableOpacity onPress={() => navigation.replace('Login')}>
+          <TouchableOpacity onPress={handleLogout}>
             <MaterialCommunityIcons name="logout" size={24} color="#64748b" />
           </TouchableOpacity>
         </View>
         <Text style={styles.dateText}>
-          {new Date().toLocaleDateString('es-ES', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+          {new Date().toLocaleDateString("es-ES", {
+            weekday: "long",
+            year: "numeric",
+            month: "long",
+            day: "numeric",
           })}
         </Text>
       </View>
@@ -66,19 +118,19 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.statsContainer}>
         <DashboardCard
           title="Stock Total"
-          value="1,234"
+          value={stockTotal}
           icon="package-variant"
           color="rgba(37, 99, 235, 1)"
         />
         <DashboardCard
           title="Alertas"
-          value="5"
+          value={lowStockCount}
           icon="alert-circle"
           color="rgba(239, 68, 68, 1)"
         />
         <DashboardCard
           title="Movimientos"
-          value="28"
+          value={recentMovements.length}
           icon="trending-up"
           color="rgba(34, 197, 94, 1)"
         />
@@ -92,61 +144,89 @@ export default function HomeScreen({ navigation }) {
             title="Agregar Refacción"
             icon="plus-circle"
             color="rgb(11, 121, 191)"
-            onPress={() => navigation.navigate('AgregarRefaccion')}
+            onPress={() => navigation.navigate("AgregarRefaccion")}
           />
           <QuickActionButton
             title="Buscar"
             icon="magnify"
             color="rgb(11, 121, 191)"
-            onPress={() => navigation.navigate('Buscar')}
+            onPress={() => navigation.navigate("Buscar")}
           />
           <QuickActionButton
             title="Traslado"
             icon="transfer"
             color="rgb(11, 121, 191)"
-            onPress={() => navigation.navigate('Traslado')}
+            onPress={() => navigation.navigate("Traslado")}
           />
           <QuickActionButton
             title="Reportes"
             icon="file-chart"
             color="rgb(11, 121, 191)"
-            onPress={() => navigation.navigate('Reportes')}
+            onPress={() => navigation.navigate("Reportes")}
           />
           <QuickActionButton
             title="Usuarios"
             icon="account-multiple"
-           color="rgb(11, 121, 191)"
-            onPress={() => navigation.navigate('User')} // Navegación corregida
+            color="rgb(11, 121, 191)"
+            onPress={() => navigation.navigate("User")}
+          />
+          <QuickActionButton
+            title="Solicitar Refacción"
+            icon="package-variant"
+            color="rgb(11, 121, 191)"
+            onPress={() => navigation.navigate("RequestPart")}
           />
         </View>
       </View>
 
       {/* Movimientos recientes */}
       <View style={styles.recentMovementsContainer}>
-        <Text style={styles.sectionTitle}>Movimientos Recientes</Text>
-        {recentMovements.map((movement) => (
-          <View key={movement.id} style={styles.movementItem}>
-            <MaterialCommunityIcons
-              name={
-                movement.type === 'entrada' ? 'arrow-down-circle' :
-                movement.type === 'salida' ? 'arrow-up-circle' :
-                'arrow-left-right-circle'
-              }
-              size={24}
-              color={
-                movement.type === 'entrada' ? '#22c55e' :
-                movement.type === 'salida' ? '#ef4444' :
-                '#f59e0b'
-              }
-            />
-            <View style={styles.movementInfo}>
-              <Text style={styles.movementTitle}>{movement.item}</Text>
-              <Text style={styles.movementSubtitle}>
-                Cantidad: {movement.quantity} • {movement.date}
-              </Text>
+        <Text className={styles.sectionTitle}>Movimientos Recientes</Text>
+        {recentMovements.length === 0 ? (
+          <Text style={{ color: "#64748b" }}>
+            No hay movimientos recientes.
+          </Text>
+        ) : (
+          recentMovements.map((movement) => (
+            <View key={movement.id} style={styles.movementItem}>
+              <MaterialCommunityIcons
+                name={
+                  movement.type === "entrada"
+                    ? "arrow-down-circle"
+                    : movement.type === "salida"
+                    ? "arrow-up-circle"
+                    : movement.type === "usuario"
+                    ? "account-plus"
+                    : movement.type === "refaccion"
+                    ? "package-variant"
+                    : movement.type === "stock"
+                    ? "database-edit"
+                    : "swap-horizontal"
+                }
+                size={24}
+                color={
+                  movement.type === "entrada"
+                    ? "#22c55e"
+                    : movement.type === "salida"
+                    ? "#ef4444"
+                    : movement.type === "usuario"
+                    ? "#2563eb"
+                    : movement.type === "refaccion"
+                    ? "#f59e0b"
+                    : movement.type === "stock"
+                    ? "#6366f1"
+                    : "#f59e0b"
+                }
+              />
+              <View style={styles.movementInfo}>
+                <Text style={styles.movementTitle}>{movement.item}</Text>
+                <Text style={styles.movementSubtitle}>
+                  Cantidad: {movement.quantity} • {movement.date}
+                </Text>
+              </View>
             </View>
-          </View>
-        ))}
+          ))
+        )}
       </View>
     </ScrollView>
   );

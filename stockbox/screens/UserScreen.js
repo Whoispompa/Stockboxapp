@@ -1,125 +1,210 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { addMovement } from "../utils/movementUtils"; // Ajusta la ruta según tu estructura
+
 import {
   View,
   Text,
-  StyleSheet,
-  TouchableOpacity,
-  ScrollView,
   TextInput,
+  TouchableOpacity,
+  FlatList,
   Modal,
+  StyleSheet,
+  Alert,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { toast } from 'sonner-native';
-
-// Mock data for users
-const initialUsers = [
-  {
-    id: '1',
-    name: 'Juan Pérez',
-    email: 'juan@example.com',
-    role: 'admin',
-    status: 'active',
-  },
-  {
-    id: '2',
-    name: 'María García',
-    email: 'maria@example.com',
-    role: 'user',
-    status: 'active',
-  },
-];
+import { Ionicons } from '@expo/vector-icons';
+import axios from 'axios';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const ROLES = [
-  { id: 'admin', label: 'Administrador' },
-  { id: 'supervisor', label: 'Supervisor' },
-  { id: 'user', label: 'Usuario' },
+  { id: 1, name: 'Administrador' },
+  { id: 2, name: 'Supervisor' },
+  { id: 3, name: 'Usuario' },
 ];
 
 export default function UserScreen({ navigation }) {
-  const [users, setUsers] = useState(initialUsers);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [users, setUsers] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
-  const [editingUser, setEditingUser] = useState(null);  // Form state
-  const [formData, setFormData] = useState({
-    employeeId: '',
-    name: '',
+  const [modalVisible, setModalVisible] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [newUser, setNewUser] = useState({
+    first_name: '',
+    last_name: '',
     email: '',
     password: '',
-    role: '',
+    roleId: 2,
   });
-  
-  const resetForm = () => {
-    setFormData({
-      employeeId: '',
-      name: '',
-      email: '',
-      password: '',
-      role: '',
-    });
-    setEditingUser(null);
+
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
+  const fetchUsers = async () => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'No se encontró el token de autenticación.');
+        return;
+      }
+      const response = await axios.get(
+        'http://193.203.165.112:4000/api/user/all',
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (response.status === 200) {
+        const mappedUsers = response.data.map((user) => ({
+          ...user,
+          roleId: ROLES.find((role) => role.name === user.role)?.id,
+        }));
+        setUsers(mappedUsers);
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        Alert.alert(
+          'Error',
+          error.response?.data?.message || 'Error al cargar los usuarios.'
+        );
+      } else {
+        Alert.alert('Error', 'Ocurrió un error desconocido.');
+      }
+    }
   };
 
-  const handleCreateUser = () => {
-    // Validaciones
-    if (!formData.name || !formData.email || (!editingUser && !formData.password) || !formData.role) {
-      toast.error('Todos los campos son requeridos');
-      return;
-    }
-
-    if (!formData.email.includes('@')) {
-      toast.error('Email inválido');
-      return;
-    }
-
-    if (!editingUser && formData.password.length < 6) {
-      toast.error('La contraseña debe tener al menos 6 caracteres');
-      return;
-    }
-
-    if (editingUser) {
-      // Actualizar usuario existente
-      setUsers(users.map(user => 
-        user.id === editingUser.id 
-          ? { ...user, ...formData }
-          : user
-      ));
-      toast.success('Usuario actualizado exitosamente');
+  const handleAddUser = async () => {
+    if (
+      newUser.first_name &&
+      newUser.last_name &&
+      newUser.email &&
+      newUser.password
+    ) {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) {
+          Alert.alert('Error', 'No se encontró el token de autenticación.');
+          return;
+        }
+        const response = await axios.post(
+          'http://193.203.165.112:4000/api/user/register',
+          {
+            email: newUser.email,
+            first_name: newUser.first_name,
+            last_name: newUser.last_name,
+            password: newUser.password,
+            roleId: Number(newUser.roleId),
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (response.status === 201) {
+          Alert.alert('Éxito', 'Usuario creado exitosamente.');
+          setUsers((prev) => [...prev, response.data.data]);
+          setModalVisible(false);
+          await addMovement({
+            id: Date.now(),
+            type: "usuario",
+            item: `Usuario: ${newUser.first_name} ${newUser.last_name}`,
+            quantity: 1,
+            date: new Date().toLocaleString(),
+          });
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          Alert.alert(
+            'Error',
+            error.response?.data?.message || 'Error al crear el usuario.'
+          );
+        } else {
+          Alert.alert('Error', 'Ocurrió un error desconocido.');
+        }
+      }
     } else {
-      // Crear nuevo usuario
-      const newUser = {
-        id: Date.now().toString(),
-        ...formData,
-        status: 'active',
-      };
-      setUsers([...users, newUser]);
-      toast.success('Usuario creado exitosamente');
+      Alert.alert('Error', 'Por favor, completa todos los campos.');
     }
-
-    setModalVisible(false);
-    resetForm();
   };
 
-  const handleEditUser = (user) => {
-    setEditingUser(user);
-    setFormData({
-      name: user.name,
-      email: user.email,
-      password: '',
-      role: user.role,
-    });
-    setModalVisible(true);
+  const handleEditUser = async () => {
+    if (selectedUser) {
+      try {
+        const token = await AsyncStorage.getItem('authToken');
+        if (!token) {
+          Alert.alert('Error', 'No se encontró el token de autenticación.');
+          return;
+        }
+        const response = await axios.patch(
+          `http://193.203.165.112:4000/api/user/update/${selectedUser.id}`,
+          {
+            email: selectedUser.email,
+            first_name: selectedUser.first_name,
+            last_name: selectedUser.last_name,
+            password: selectedUser.password || '',
+            roleId: Number(selectedUser.roleId),
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (response.status === 200) {
+          Alert.alert('Éxito', 'Usuario actualizado exitosamente.');
+          setUsers((prevUsers) =>
+            prevUsers.map((user) =>
+              user.id === selectedUser.id ? { ...user, ...selectedUser } : user
+            )
+          );
+          setEditModalVisible(false);
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error)) {
+          Alert.alert(
+            'Error',
+            error.response?.data?.message || 'Error al actualizar el usuario.'
+          );
+        } else {
+          Alert.alert('Error', 'Ocurrió un error desconocido.');
+        }
+      }
+    }
   };
 
-  const handleDeleteUser = (userId) => {
-    setUsers(users.filter(user => user.id !== userId));
-    toast.success('Usuario eliminado exitosamente');
+  const handleToggleUserStatus = async (userId) => {
+    try {
+      const token = await AsyncStorage.getItem('authToken');
+      if (!token) {
+        Alert.alert('Error', 'No se encontró el token de autenticación.');
+        return;
+      }
+      const response = await axios.patch(
+        `http://193.203.165.112:4000/api/user/status/${userId}`,
+        {},
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      if (response.status === 200) {
+        Alert.alert('Éxito', 'Estado del usuario actualizado.');
+        fetchUsers();
+        setEditModalVisible(false);
+      }
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        Alert.alert(
+          'Error',
+          error.response?.data?.message || 'Error al cambiar el estado del usuario.'
+        );
+      } else {
+        Alert.alert('Error', 'Ocurrió un error desconocido.');
+      }
+    }
   };
-
-  const filteredUsers = users.filter(user =>
-    user.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    user.email.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   return (
     <View style={styles.container}>
@@ -129,198 +214,246 @@ export default function UserScreen({ navigation }) {
           style={styles.backButton}
           onPress={() => navigation.navigate('Home')}
         >
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#64748b" />
-          <Text style={styles.backButtonText}></Text>
+          <Ionicons name="arrow-back" size={24} color="#007bff" />
+          <Text style={styles.backButtonText}>Menú</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Gestión de Usuarios</Text>
+        <Text style={styles.title}>Gestión de Usuarios</Text>
       </View>
 
-      {/* Barra de búsqueda y botón de crear */}
-      <View style={styles.actionBar}>
-        <View style={styles.searchContainer}>
-          <MaterialCommunityIcons name="magnify" size={24} color="#64748b" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Buscar usuarios..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-        </View>
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <Ionicons name="search-outline" size={20} color="#6c757d" />
+        <TextInput
+          style={styles.searchInput}
+          placeholder="Buscar usuarios..."
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+        />
         <TouchableOpacity
+          onPress={() => setModalVisible(true)}
           style={styles.addButton}
-          onPress={() => {
-            resetForm();
-            setModalVisible(true);
-          }}
         >
-          <LinearGradient
-            colors={['#2563eb', '#1d4ed8']}
-            style={styles.addButtonGradient}
-          >
-            <MaterialCommunityIcons name="plus" size={24} color="#ffffff" />
-          </LinearGradient>
+          <Ionicons name="add-outline" size={24} color="#ffffff" />
         </TouchableOpacity>
       </View>
 
-      {/* Lista de usuarios */}
-      <ScrollView style={styles.usersList}>
-        {filteredUsers.map((user) => (
-          <View key={user.id} style={styles.userCard}>
-            <View style={styles.userInfo}>
-              <View style={styles.userHeader}>
-                <Text style={styles.userName}>{user.name}</Text>
-                <View style={[
-                  styles.statusBadge,
-                  { backgroundColor: user.status === 'active' ? '#22c55e20' : '#ef444420' }
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    { color: user.status === 'active' ? '#22c55e' : '#ef4444' }
-                  ]}>
-                    {user.status === 'active' ? 'Activo' : 'Inactivo'}
-                  </Text>
-                </View>
-              </View>              <Text style={styles.userEmployeeId}>No. Empleado: {user.employeeId}</Text>
-              <Text style={styles.userEmail}>{user.email}</Text>
+      {/* Users List */}
+      <FlatList
+        data={users.filter(
+          (user) =>
+            (user.first_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+            (user.last_name?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+            (user.email?.toLowerCase() || '').includes(searchQuery.toLowerCase())
+        )}
+        keyExtractor={(item, index) => item.id?.toString() || index.toString()}
+        renderItem={({ item }) => (
+          <View style={styles.userCard}>
+            <View>
+              <Text style={styles.userName}>
+                {item.first_name} {item.last_name}
+              </Text>
+              <Text style={styles.userEmail}>{item.email}</Text>
               <Text style={styles.userRole}>
-                {ROLES.find(r => r.id === user.role)?.label || user.role}
+                {ROLES.find((role) => role.id === item.roleId)?.name}
+              </Text>
+              <Text style={styles.userStatus}>
+                {item.isActive ? 'Activo' : 'Inactivo'}
               </Text>
             </View>
-            <View style={styles.userActions}>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.editButton]}
-                onPress={() => handleEditUser(user)}
-              >
-                <MaterialCommunityIcons name="pencil" size={20} color="#2563eb" />
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.actionButton, styles.deleteButton]}
-                onPress={() => handleDeleteUser(user.id)}
-              >
-                <MaterialCommunityIcons name="delete" size={20} color="#ef4444" />
-              </TouchableOpacity>
-            </View>
-          </View>
-        ))}
-        {filteredUsers.length === 0 && (
-          <View style={styles.emptyState}>
-            <MaterialCommunityIcons name="account-search" size={48} color="#94a3b8" />
-            <Text style={styles.emptyStateText}>No se encontraron usuarios</Text>
+            <TouchableOpacity
+              onPress={() => {
+                setSelectedUser(item);
+                setEditModalVisible(true);
+              }}
+              style={styles.editButton}
+            >
+              <Ionicons name="create-outline" size={20} color="#007bff" />
+            </TouchableOpacity>
           </View>
         )}
-      </ScrollView>
+      />
 
-      {/* Modal para crear/editar usuario */}
-      <Modal
-        visible={modalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => {
-          setModalVisible(false);
-          resetForm();
-        }}
-      >
+      {/* Add User Modal */}
+      <Modal visible={modalVisible} animationType="slide" transparent={true}>
         <View style={styles.modalContainer}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>
-                {editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setModalVisible(false);
-                  resetForm();
-                }}
-              >
-                <MaterialCommunityIcons name="close" size={24} color="#64748b" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.modalBody}>              <View style={styles.formGroup}>
-                <Text style={styles.label}>No. Empleado</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.employeeId}
-                  onChangeText={(text) => setFormData({ ...formData, employeeId: text })}
-                  placeholder="Ingrese el número de empleado"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Nombre completo</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.name}
-                  onChangeText={(text) => setFormData({ ...formData, name: text })}
-                  placeholder="Ingrese el nombre completo"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Correo electrónico</Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.email}
-                  onChangeText={(text) => setFormData({ ...formData, email: text })}
-                  placeholder="Ingrese el correo electrónico"
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>
-                  {editingUser ? 'Contraseña (dejar en blanco para mantener)' : 'Contraseña'}
-                </Text>
-                <TextInput
-                  style={styles.input}
-                  value={formData.password}
-                  onChangeText={(text) => setFormData({ ...formData, password: text })}
-                  placeholder="Ingrese la contraseña"
-                  secureTextEntry
-                />
-              </View>
-
-              <View style={styles.formGroup}>
-                <Text style={styles.label}>Rol</Text>
-                <View style={styles.roleButtons}>
-                  {ROLES.map((role) => (
-                    <TouchableOpacity
-                      key={role.id}
-                      style={[
-                        styles.roleButton,
-                        formData.role === role.id && styles.roleButtonSelected
-                      ]}
-                      onPress={() => setFormData({ ...formData, role: role.id })}
-                    >
-                      <Text style={[
-                        styles.roleButtonText,
-                        formData.role === role.id && styles.roleButtonTextSelected
-                      ]}>
-                        {role.label}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.submitButton}
-                onPress={handleCreateUser}
-              >
-                <LinearGradient
-                  colors={['#2563eb', '#1d4ed8']}
-                  style={styles.submitButtonGradient}
+            <Text style={styles.modalTitle}>Nuevo Usuario</Text>
+            <TouchableOpacity
+              style={styles.closeButton}
+              onPress={() => setModalVisible(false)}
+            >
+              <Ionicons name="close-outline" size={24} color="#6c757d" />
+            </TouchableOpacity>
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre"
+              value={newUser.first_name}
+              onChangeText={(text) =>
+                setNewUser({ ...newUser, first_name: text })
+              }
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Apellido"
+              value={newUser.last_name}
+              onChangeText={(text) =>
+                setNewUser({ ...newUser, last_name: text })
+              }
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Correo electrónico"
+              value={newUser.email}
+              onChangeText={(text) => setNewUser({ ...newUser, email: text })}
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Contraseña"
+              value={newUser.password}
+              onChangeText={(text) =>
+                setNewUser({ ...newUser, password: text })
+              }
+              secureTextEntry
+            />
+            <View style={styles.roleContainer}>
+              {ROLES.map((role) => (
+                <TouchableOpacity
+                  key={role.id}
+                  style={[
+                    styles.roleButton,
+                    newUser.roleId === role.id && styles.activeRoleButton,
+                  ]}
+                  onPress={() => setNewUser({ ...newUser, roleId: role.id })}
                 >
-                  <Text style={styles.submitButtonText}>
-                    {editingUser ? 'Actualizar Usuario' : 'Crear Usuario'}
+                  <Text
+                    style={[
+                      styles.roleText,
+                      newUser.roleId === role.id && styles.activeRoleText,
+                    ]}
+                  >
+                    {role.name}
                   </Text>
-                </LinearGradient>
-              </TouchableOpacity>
-            </ScrollView>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={styles.createButton} onPress={handleAddUser}>
+              <Text style={styles.createButtonText}>Crear Usuario</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      {/* Edit User Modal */}
+      {selectedUser && (
+        <Modal visible={editModalVisible} animationType="slide" transparent={true}>
+          <View style={styles.modalContainer}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Editar Usuario</Text>
+              <TouchableOpacity
+                style={styles.closeButton}
+                onPress={() => setEditModalVisible(false)}
+              >
+                <Ionicons name="close-outline" size={24} color="#6c757d" />
+              </TouchableOpacity>
+              <TextInput
+                style={styles.input}
+                placeholder="Nombre"
+                value={selectedUser.first_name}
+                onChangeText={(text) =>
+                  setSelectedUser({ ...selectedUser, first_name: text })
+                }
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Apellido"
+                value={selectedUser.last_name}
+                onChangeText={(text) =>
+                  setSelectedUser({ ...selectedUser, last_name: text })
+                }
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Correo electrónico"
+                value={selectedUser.email}
+                onChangeText={(text) =>
+                  setSelectedUser({ ...selectedUser, email: text })
+                }
+                keyboardType="email-address"
+              />
+              <TextInput
+                style={styles.input}
+                placeholder="Contraseña (opcional)"
+                value={selectedUser.password || ''}
+                onChangeText={(text) =>
+                  setSelectedUser({ ...selectedUser, password: text })
+                }
+                secureTextEntry
+              />
+              <View style={styles.roleContainer}>
+                {ROLES.map((role) => (
+                  <TouchableOpacity
+                    key={role.id}
+                    style={[
+                      styles.roleButton,
+                      selectedUser.roleId === role.id && styles.activeRoleButton,
+                    ]}
+                    onPress={() =>
+                      setSelectedUser({ ...selectedUser, roleId: role.id })
+                    }
+                  >
+                    <Text
+                      style={[
+                        styles.roleText,
+                        selectedUser.roleId === role.id && styles.activeRoleText,
+                      ]}
+                    >
+                      {role.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.statusContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.statusButton,
+                    selectedUser.isActive && styles.activeStatusButton,
+                  ]}
+                  onPress={() => handleToggleUserStatus(selectedUser.id)}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      selectedUser.isActive && styles.activeStatusText,
+                    ]}
+                  >
+                    Activar
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[
+                    styles.statusButton,
+                    !selectedUser.isActive && styles.inactiveStatusButton,
+                  ]}
+                  onPress={() => handleToggleUserStatus(selectedUser.id)}
+                >
+                  <Text
+                    style={[
+                      styles.statusText,
+                      !selectedUser.isActive && styles.inactiveStatusText,
+                    ]}
+                  >
+                    Desactivar
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity style={styles.createButton} onPress={handleEditUser}>
+                <Text style={styles.createButtonText}>Guardar Cambios</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </View>
   );
 }
@@ -328,217 +461,184 @@ export default function UserScreen({ navigation }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8fafc',
+    backgroundColor: '#f8f9fa',
+    padding: 20,
   },
   header: {
-    backgroundColor: '#ffffff',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   backButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    marginRight: 10,
   },
   backButtonText: {
-    marginLeft: 8,
+    color: '#007bff',
     fontSize: 16,
-    color: '#64748b',
+    marginLeft: 5,
+    fontWeight: 'bold',
   },
-  headerTitle: {
+  title: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  actionBar: {
-    flexDirection: 'row',
-    padding: 15,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    color: '#212529',
+    flex: 1,
   },
   searchContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    marginRight: 10,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
     marginLeft: 10,
     fontSize: 16,
-    color: '#1e293b',
+    color: '#495057',
   },
   addButton: {
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  addButtonGradient: {
-    padding: 12,
-  },
-  usersList: {
-    flex: 1,
-    padding: 15,
+    backgroundColor: '#007bff',
+    padding: 10,
+    borderRadius: 8,
+    marginLeft: 10,
   },
   userCard: {
     flexDirection: 'row',
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 15,
-    marginBottom: 15,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  userInfo: {
-    flex: 1,
-  },
-  userHeader: {
-    flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    backgroundColor: '#ffffff',
+    borderRadius: 8,
+    padding: 15,
+    marginBottom: 10,
+    shadowColor: '#000',
+    shadowOpacity: 0.1,
+    shadowRadius: 5,
+    elevation: 3,
   },
   userName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '500',
-  },  userEmployeeId: {
-    fontSize: 14,
-    color: '#2563eb',
-    fontWeight: '500',
-    marginBottom: 2,
+    color: '#212529',
   },
   userEmail: {
     fontSize: 14,
-    color: '#64748b',
-    marginBottom: 4,
+    color: '#6c757d',
   },
   userRole: {
     fontSize: 14,
-    color: '#64748b',
-    fontWeight: '500',
+    color: '#6c757d',
   },
-  userActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  actionButton: {
-    padding: 8,
-    borderRadius: 8,
-  },
-  editButton: {
-    backgroundColor: '#eff6ff',
-  },
-  deleteButton: {
-    backgroundColor: '#fee2e2',
-  },
-  emptyState: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  emptyStateText: {
-    fontSize: 16,
-    color: '#64748b',
-    marginTop: 16,
+  userStatus: {
+    fontSize: 14,
+    color: '#6c757d',
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.5)',
   },
   modalContent: {
     backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    maxHeight: '90%',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    borderRadius: 8,
     padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
+    width: '90%',
+    position: 'relative',
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#1e293b',
-  },
-  modalBody: {
-    padding: 20,
-  },
-  formGroup: {
+    color: '#212529',
     marginBottom: 20,
   },
-  label: {
-    fontSize: 14,
-    color: '#64748b',
-    marginBottom: 8,
+  closeButton: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
   },
   input: {
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 12,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#dee2e6',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 15,
     fontSize: 16,
-    color: '#1e293b',
+    color: '#495057',
   },
-  roleButtons: {
+  roleContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
   roleButton: {
     flex: 1,
-    minWidth: '30%',
-    backgroundColor: '#f1f5f9',
-    borderRadius: 12,
-    padding: 12,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#e9ecef',
     alignItems: 'center',
+    marginHorizontal: 5,
   },
-  roleButtonSelected: {
-    backgroundColor: '#eff6ff',
-    borderWidth: 2,
-    borderColor: '#2563eb',
+  activeRoleButton: {
+    backgroundColor: '#007bff',
   },
-  roleButtonText: {
-    color: '#64748b',
+  roleText: {
     fontSize: 14,
-    fontWeight: '500',
+    color: '#495057',
   },
-  roleButtonTextSelected: {
-    color: '#2563eb',
+  activeRoleText: {
+    color: '#ffffff',
   },
-  submitButton: {
-    marginTop: 20,
-    borderRadius: 12,
-    overflow: 'hidden',
+  statusContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
   },
-  submitButtonGradient: {
-    padding: 16,
+  statusButton: {
+    flex: 1,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: '#e9ecef',
+    alignItems: 'center',
+    marginHorizontal: 5,
+  },
+  activeStatusButton: {
+    backgroundColor: '#28a745',
+  },
+  inactiveStatusButton: {
+    backgroundColor: '#dc3545',
+  },
+  statusText: {
+    fontSize: 14,
+    color: '#495057',
+  },
+  activeStatusText: {
+    color: '#ffffff',
+  },
+  inactiveStatusText: {
+    color: '#ffffff',
+  },
+  createButton: {
+    backgroundColor: '#007bff',
+    padding: 15,
+    borderRadius: 8,
     alignItems: 'center',
   },
-  submitButtonText: {
+  createButtonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  editButton: {
+    padding: 10,
   },
 });
