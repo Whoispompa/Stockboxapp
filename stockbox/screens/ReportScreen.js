@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -16,15 +16,55 @@ import axios from "axios";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const ReportScreen = ({ navigation }) => {
-  const [selectedPeriod, setSelectedPeriod] = useState("week");
   const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
-  const reportData = {
-    stockBajo: 5,
-    transferencias: 28,
-    entradas: 45,
-    salidas: 32,
-  };
+  // Valores dinámicos
+  const [reportData, setReportData] = useState({
+    stockBajo: 0,
+    transferencias: 0,
+    entradas: 0,
+    salidas: 0,
+  });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Stock bajo
+        const token = await AsyncStorage.getItem("authToken");
+        const response = await axios.get(
+          "http://193.203.165.112:4000/api/product/all",
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        const products = response.data;
+        const stockBajo = products.filter(p => p.quantity <= 5).length;
+
+        // Movimientos
+        const movementsRaw = await AsyncStorage.getItem("recentMovements");
+        const movements = movementsRaw ? JSON.parse(movementsRaw) : [];
+
+        const transferencias = movements.filter(m => m.type === "traslado" || m.type === "traslado-pendiente").length;
+        const entradas = movements.filter(m => m.type === "entrada").length;
+        const salidas = movements.filter(m => m.type === "salida").length;
+
+        setReportData({
+          stockBajo,
+          transferencias,
+          entradas,
+          salidas,
+        });
+      } catch (e) {
+        setReportData({
+          stockBajo: 0,
+          transferencias: 0,
+          entradas: 0,
+          salidas: 0,
+        });
+      }
+    };
+    fetchData();
+  }, []);
 
   const reportTypes = [
     {
@@ -57,15 +97,18 @@ const ReportScreen = ({ navigation }) => {
     },
   ];
 
+  // Si quieres comentar el filtro de período, comenta todo este bloque:
+  /*
   const timePeriods = [
     { id: "week", label: "Última Semana" },
     { id: "month", label: "Último Mes" },
     { id: "year", label: "Último Año" },
   ];
+  const [selectedPeriod, setSelectedPeriod] = useState("week");
+  */
 
   const handleExportPDF = async () => {
     setIsGeneratingPDF(true);
-    console.log("Exportar PDF: función llamada");
     try {
       const token = await AsyncStorage.getItem("authToken");
       const response = await axios.get(
@@ -85,7 +128,7 @@ const ReportScreen = ({ navigation }) => {
         day: "numeric",
       });
 
-      // HTML mejor formateado para el PDF
+      // HTML para el PDF
       const html = `
         <html>
           <head>
@@ -106,9 +149,6 @@ const ReportScreen = ({ navigation }) => {
           <body>
             <div class="header">
               <h1>Reporte de Refacciones</h1>
-              <div class="subtitle">Período: ${
-                timePeriods.find((p) => p.id === selectedPeriod).label
-              }</div>
               <div class="subtitle">Generado: ${currentDate}</div>
             </div>
             
@@ -145,8 +185,8 @@ const ReportScreen = ({ navigation }) => {
       // Generar el PDF
       const { uri } = await Print.printToFileAsync({
         html,
-        width: 842, // Ancho A4 en puntos (1/72 pulgada)
-        height: 1190, // Alto A4
+        width: 842,
+        height: 1190,
         base64: false,
       });
 
@@ -200,7 +240,8 @@ const ReportScreen = ({ navigation }) => {
         <Text style={styles.headerTitle}>Reportes</Text>
       </View>
 
-      {/* Filtro de Período */}
+      {/* Si quieres ocultar el filtro de período, comenta este bloque */}
+      {/*
       <View style={styles.periodFilter}>
         {timePeriods.map((period) => (
           <TouchableOpacity
@@ -222,6 +263,7 @@ const ReportScreen = ({ navigation }) => {
           </TouchableOpacity>
         ))}
       </View>
+      */}
 
       {/* Reportes */}
       <ScrollView style={styles.reportsContainer}>
@@ -252,8 +294,6 @@ const ReportScreen = ({ navigation }) => {
               </Text>
             </LinearGradient>
           </TouchableOpacity>
-
-          
         </View>
       </ScrollView>
     </View>
